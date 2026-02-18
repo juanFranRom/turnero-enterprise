@@ -1,0 +1,82 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  planId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  plan         Plan          @relation(fields: [planId], references: [id])
+  users        Membership[]
+  locations    Location[]
+  appointments Appointment[]
+}
+
+model Plan {
+  id        String   @id @default(uuid())
+  name      String
+  price     Int
+  createdAt DateTime @default(now())
+
+  tenants Tenant[]
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+
+  memberships Membership[]
+}
+
+model Membership {
+  id       String @id @default(uuid())
+  role     Role
+  userId   String
+  tenantId String
+
+  user   User   @relation(fields: [userId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([userId, tenantId])
+}
+
+model Location {
+  id       String @id @default(uuid())
+  name     String
+  tenantId String
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  appointments Appointment[]
+}
+
+model Appointment {
+  id         String   @id @default(uuid())
+  tenantId   String
+  locationId String
+  startsAt   DateTime
+  endsAt     DateTime
+  createdAt  DateTime @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+
+  @@index([tenantId])
+  @@index([locationId])
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  STAFF
+}
