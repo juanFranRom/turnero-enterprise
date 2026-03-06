@@ -6,9 +6,11 @@ import argon2 from 'argon2';
 /* eslint-disable */
 module.exports = async function () {
   console.log('\nSetting up...\n');
+  process.env.E2E = '1';
 
   const host = process.env.HOST ?? 'localhost';
   const port = process.env.PORT ? Number(process.env.PORT) : 3000;
+  process.env.NX_BASE_URL = process.env.NX_BASE_URL ?? `http://${host}:${port}`;
 
   // 1) Puerto abierto
   await waitForPortOpen(port, { host });
@@ -37,6 +39,7 @@ module.exports = async function () {
 
   const existingTenant = await prisma.tenant.findUnique({ where: { slug: tenantSlug } });
   if (existingTenant) {
+    await prisma.appointmentHistory.deleteMany({ where: { tenantId: existingTenant.id } });
     await prisma.appointment.deleteMany({ where: { tenantId: existingTenant.id } });
     await prisma.availabilityOverride.deleteMany({ where: { tenantId: existingTenant.id } });
     await prisma.weeklySchedule.deleteMany({ where: { tenantId: existingTenant.id } });
@@ -47,6 +50,23 @@ module.exports = async function () {
     await prisma.membership.deleteMany({ where: { tenantId: existingTenant.id } });
     await prisma.session.deleteMany({ where: { tenantId: existingTenant.id } });
     await prisma.tenant.delete({ where: { id: existingTenant.id } });
+  }
+
+  const otherTenantSlug = 'e2e-other';
+
+  const existingOther = await prisma.tenant.findUnique({ where: { slug: otherTenantSlug } });
+  if (existingOther) {
+    await prisma.appointmentHistory.deleteMany({ where: { tenantId: existingOther.id } });
+    await prisma.appointment.deleteMany({ where: { tenantId: existingOther.id } });
+    await prisma.availabilityOverride.deleteMany({ where: { tenantId: existingOther.id } });
+    await prisma.weeklySchedule.deleteMany({ where: { tenantId: existingOther.id } });
+    await prisma.resourceService.deleteMany({ where: { tenantId: existingOther.id } });
+    await prisma.service.deleteMany({ where: { tenantId: existingOther.id } });
+    await prisma.resource.deleteMany({ where: { tenantId: existingOther.id } });
+    await prisma.location.deleteMany({ where: { tenantId: existingOther.id } });
+    await prisma.membership.deleteMany({ where: { tenantId: existingOther.id } });
+    await prisma.session.deleteMany({ where: { tenantId: existingOther.id } });
+    await prisma.tenant.delete({ where: { id: existingOther.id } });
   }
 
   let plan = await prisma.plan.findFirst();
@@ -134,6 +154,35 @@ module.exports = async function () {
     },
   });
 
+  const otherTenant = await prisma.tenant.create({
+    data: { name: 'E2E Other Tenant', slug: otherTenantSlug, planId: plan.id },
+  });
+
+  const otherEmail = 'e2e-other@turnero.dev';
+  const otherPassword = 'e2e-other-password-123';
+  const otherPasswordHash = await argon2.hash(otherPassword);
+
+  const otherUser = await prisma.user.upsert({
+    where: { email: otherEmail },
+    update: { passwordHash: otherPasswordHash, isActive: true, emailVerified: true },
+    create: { email: otherEmail, passwordHash: otherPasswordHash, isActive: true, emailVerified: true },
+  });
+
+  await prisma.membership.upsert({
+    where: { userId_tenantId: { userId: otherUser.id, tenantId: otherTenant.id } },
+    update: { role: 'OWNER' },
+    create: { userId: otherUser.id, tenantId: otherTenant.id, role: 'OWNER' },
+  });
+
+  const otherLocation = await prisma.location.create({
+    data: {
+      tenantId: otherTenant.id,
+      name: 'E2E Other Location',
+      timeZone: 'UTC',
+      isActive: true,
+    },
+  });
+
   await prisma.$disconnect();
 
   // 4) Exponer fixtures a los specs
@@ -143,6 +192,10 @@ module.exports = async function () {
   process.env.E2E_LOCATION_ID = location.id;
   process.env.E2E_RESOURCE_ID = resource.id;
   process.env.E2E_SERVICE_ID = service.id;
+  process.env.E2E_OTHER_TENANT_SLUG = otherTenantSlug;
+  process.env.E2E_OTHER_EMAIL = otherEmail;
+  process.env.E2E_OTHER_PASSWORD = otherPassword;
+  process.env.E2E_OTHER_LOCATION_ID = otherLocation.id;
 
   globalThis.__TEARDOWN_MESSAGE__ = '\nTearing down...\n';
 };

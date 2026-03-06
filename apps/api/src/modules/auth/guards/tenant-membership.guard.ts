@@ -8,7 +8,7 @@ export class TenantMembershipGuard implements CanActivate {
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<any>();
     const tenant = req.tenant;
-    const user = req.user;
+    const user = req.auth;
 
     if (!tenant?.id) throw new UnauthorizedException('Missing tenant');
     if (!user?.userId) throw new UnauthorizedException('Missing user');

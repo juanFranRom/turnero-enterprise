@@ -1,11 +1,12 @@
 import { Logger } from '@nestjs/common';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './modules/app.module';
+import { AppModule } from './app.module';
 import cookieParser from 'cookie-parser';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { RetryAfter429Filter } from './common/filters/retry-after.filter';
-import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
+import { CorrelationIdMiddleware } from './common/http/correlation-id.middleware';
+import { PinoHttpMiddleware } from './common/logging/pino-http.middleware';
 
 
 async function bootstrap() {
@@ -14,8 +15,12 @@ async function bootstrap() {
 
   const globalPrefix = 'api';
   app.setGlobalPrefix(globalPrefix);
-  
-  app.useGlobalFilters(new PrismaExceptionFilter());
+
+  const correlation = new CorrelationIdMiddleware();
+  const pino = new PinoHttpMiddleware();
+  app.use(correlation.use.bind(correlation));
+  app.use(pino.use.bind(pino));
+
   app.useGlobalFilters(new RetryAfter429Filter());
 
   app.set('trust proxy', 1);

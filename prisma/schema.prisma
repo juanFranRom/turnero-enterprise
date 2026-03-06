@@ -303,6 +303,8 @@ model Appointment {
   createdByUserId String?
   updatedByUserId String?
 
+  history AppointmentHistory[]
+
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
   resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
@@ -332,4 +334,59 @@ enum Role {
   OWNER
   ADMIN
   STAFF
+}
+
+
+/// ------------------------------
+/// Auditoria
+/// ------------------------------
+
+enum AppointmentHistoryAction {
+  CREATED
+  CANCELLED
+  RESCHEDULED
+}
+
+enum AuditActorType {
+  USER
+  SYSTEM
+}
+
+model AppointmentHistory {
+  id            String   @id @default(uuid())
+  tenantId      String
+  appointmentId String
+
+  action        AppointmentHistoryAction
+
+  actorType     AuditActorType @default(USER)
+  actorUserId   String?
+  // (opcionales si luego querés: actorSessionId, ip, userAgent)
+
+  resourceId    String
+  serviceId     String?
+  locationId    String
+
+  prevStartsAt  DateTime?
+  prevEndsAt    DateTime?
+  newStartsAt   DateTime?
+  newEndsAt     DateTime?
+
+  idempotencyKey String?
+  reason        String?
+  metadata      Json?
+
+  createdAt     DateTime @default(now())
+  
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([tenantId, action, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([tenantId, actorUserId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([tenantId, appointmentId, createdAt, id])
+  @@index([tenantId, appointmentId, createdAt(sort: Desc)])
+  @@index([tenantId, action, createdAt(sort: Desc)])
+  @@index([tenantId, actorUserId, createdAt(sort: Desc)])
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([tenantId, appointmentId])
 }

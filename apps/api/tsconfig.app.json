@@ -9,7 +9,7 @@
     "target": "es2021",
     "moduleResolution": "node"
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts"],
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/app.controller.ts", "src/app.service.spec.ts", "src/app.service.ts", "src/app.controller.spec.ts", "src/app.module.ts"],
   "exclude": [
     "jest.config.ts",
     "jest.config.cts",

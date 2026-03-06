@@ -4,9 +4,11 @@ import {
   Catch,
   ExceptionFilter,
   HttpStatus,
-  Logger,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { Request } from 'express';
+import { logger } from '../logging/logger';
+import { MetricsService } from '../../modules/metrics/metrics.service';
 
 type PgError = Error & {
   code?: string;       // SQLSTATE (e.g. 23P01, 23505)
@@ -14,26 +16,88 @@ type PgError = Error & {
   detail?: string;
 };
 
-@Catch(Prisma.PrismaClientKnownRequestError, Prisma.PrismaClientUnknownRequestError)
+@Catch(
+  Prisma.PrismaClientKnownRequestError,
+  Prisma.PrismaClientUnknownRequestError,
+)
 export class PrismaExceptionFilter implements ExceptionFilter {
-  private readonly logger = new Logger(PrismaExceptionFilter.name);
+  constructor(private readonly metrics: MetricsService) {} // ✅ DI
 
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
+    const req = ctx.getRequest<Request>();
     const res = ctx.getResponse();
 
-    // Known Prisma errors (P20xx)
+    const pg = this.extractPgError(exception as any);
+    const sqlstate = pg?.code;
+
+    const logCtx = {
+      correlationId: (req as any).correlationId ?? null,
+      tenantId: (req as any).tenant?.id ?? null,
+      tenantSlug: (req as any).tenant?.slug ?? null,
+      userId: (req as any).user?.userId ?? (req as any).auth?.userId ?? null, // ✅ prefer req.user (Passport)
+      role: (req as any).user?.role ?? (req as any).auth?.role ?? null,
+      sid: (req as any).user?.sid ?? (req as any).auth?.sid ?? null,
+
+      method: req.method,
+      path: (req as any).originalUrl ?? req.url,
+
+      prisma: {
+        kind:
+          exception instanceof Prisma.PrismaClientKnownRequestError
+            ? 'known'
+            : exception instanceof Prisma.PrismaClientUnknownRequestError
+              ? 'unknown'
+              : 'non_prisma',
+        prismaCode:
+          exception instanceof Prisma.PrismaClientKnownRequestError
+            ? exception.code
+            : undefined,
+      },
+
+      pg: sqlstate
+        ? {
+            sqlstate,
+            constraint: (pg as any)?.constraint,
+            detail: (pg as any)?.detail,
+          }
+        : undefined,
+    };
+
     if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       const mapped = this.mapKnownPrismaError(exception);
-      if (mapped) return res.status(mapped.status).json(mapped.body);
+      if (mapped) {
+        const lvl = mapped.status >= 500 ? 'error' : mapped.status >= 400 ? 'warn' : 'info';
+        logger[lvl](
+          { ...logCtx, err: exception, responseStatus: mapped.status, responseCode: mapped.body?.error?.code },
+          'Prisma known error mapped',
+        );
+        return res.status(mapped.status).json(mapped.body);
+      }
 
-      // En algunos casos Prisma encapsula error PG en meta/cause
       const mappedPg = this.tryMapPg(exception);
-      if (mappedPg) return res.status(mappedPg.status).json(mappedPg.body);
+      if (mappedPg) {
+        // ✅ overlap counter
+        if (sqlstate === '23P01') {
+          const tenant =
+            (req as any).tenant?.slug ??
+            (req.headers['x-tenant-slug'] as string | undefined) ??
+            'unknown';
 
-      this.logger.error(
-        `Unhandled PrismaClientKnownRequestError code=${exception.code}`,
-        exception.stack,
+          this.metrics.appointmentOverlapConflictsTotal.inc({ tenant });
+        }
+
+        const lvl = mappedPg.status >= 500 ? 'error' : mappedPg.status >= 400 ? 'warn' : 'info';
+        logger[lvl](
+          { ...logCtx, err: exception, responseStatus: mappedPg.status, responseCode: mappedPg.body?.error?.code },
+          'Postgres sqlstate mapped from Prisma known error',
+        );
+        return res.status(mappedPg.status).json(mappedPg.body);
+      }
+
+      logger.error(
+        { ...logCtx, err: exception },
+        `Unhandled PrismaClientKnownRequestError`,
       );
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         error: {
@@ -43,27 +107,48 @@ export class PrismaExceptionFilter implements ExceptionFilter {
       });
     }
 
-    // Unknown Prisma errors (pueden tener cause PG)
     if (exception instanceof Prisma.PrismaClientUnknownRequestError) {
       const mappedPg = this.tryMapPg(exception);
-      if (mappedPg) return res.status(mappedPg.status).json(mappedPg.body);
+      if (mappedPg) {
+        // ✅ overlap counter
+        if (sqlstate === '23P01') {
+          const tenant =
+            (req as any).tenant?.slug ??
+            (req.headers['x-tenant-slug'] as string | undefined) ??
+            'unknown';
 
-      this.logger.error('PrismaClientUnknownRequestError', exception.stack);
+          this.metrics.appointmentOverlapConflictsTotal.inc({ tenant });
+        }
+
+        const lvl = mappedPg.status >= 500 ? 'error' : mappedPg.status >= 400 ? 'warn' : 'info';
+        logger[lvl](
+          { ...logCtx, err: exception, responseStatus: mappedPg.status, responseCode: mappedPg.body?.error?.code },
+          'Postgres sqlstate mapped from Prisma unknown error',
+        );
+        return res.status(mappedPg.status).json(mappedPg.body);
+      }
+
+      logger.error(
+        { ...logCtx, err: exception },
+        'PrismaClientUnknownRequestError (unmapped)',
+      );
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         error: { code: 'INTERNAL_ERROR', message: 'Unexpected database error' },
       });
     }
 
-    // No debería entrar acá por el @Catch, pero por las dudas
-    this.logger.error('Non-prisma exception reached PrismaExceptionFilter');
+    logger.error(
+      { ...logCtx, err: exception as any },
+      'Non-prisma exception reached PrismaExceptionFilter',
+    );
     return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       error: { code: 'INTERNAL_ERROR', message: 'Unexpected error' },
     });
   }
 
-  private mapKnownPrismaError(e: Prisma.PrismaClientKnownRequestError):
-    | { status: number; body: any }
-    | null {
+  private mapKnownPrismaError(
+    e: Prisma.PrismaClientKnownRequestError,
+  ): { status: number; body: any } | null {
     switch (e.code) {
       case 'P2002': // Unique constraint failed
         return {
@@ -88,8 +173,7 @@ export class PrismaExceptionFilter implements ExceptionFilter {
           },
         };
 
-      // Si querés: P2003 FK en prisma (a veces aparece)
-      case 'P2003':
+      case 'P2003': // FK failed
         return {
           status: HttpStatus.CONFLICT,
           body: {
@@ -107,16 +191,13 @@ export class PrismaExceptionFilter implements ExceptionFilter {
   }
 
   /**
-   * Intenta mapear SQLSTATE de Postgres si viene embebido en `cause` o `meta`.
-   * Para tu caso clave: 23P01 -> overlap
+   * Intenta mapear SQLSTATE de Postgres.
+   * Prisma 6 a veces NO expone cause.code de forma estructurada (viene embebido en message),
+   * especialmente para EXCLUSION CONSTRAINT (23P01).
    */
   private tryMapPg(e: any): { status: number; body: any } | null {
-    const cause: PgError | undefined =
-      (e?.cause as PgError) ||
-      (e?.meta?.cause as PgError) ||
-      (typeof e?.meta === 'object' ? (e.meta as any)?.cause : undefined);
-
-    const sqlstate = cause?.code;
+    const pg = this.extractPgError(e);
+    const sqlstate = pg?.code;
 
     if (!sqlstate) return null;
 
@@ -169,7 +250,6 @@ export class PrismaExceptionFilter implements ExceptionFilter {
       };
     }
 
-    // Otros 23xxx: integridad
     if (sqlstate.startsWith('23')) {
       return {
         status: HttpStatus.CONFLICT,
@@ -177,11 +257,41 @@ export class PrismaExceptionFilter implements ExceptionFilter {
           error: {
             code: 'INTEGRITY_VIOLATION',
             message: 'Database integrity constraint violation',
+            details: pg?.detail ? { detail: pg.detail } : undefined,
           },
         },
       };
     }
 
     return null;
+  }
+
+  private extractPgError(e: any): PgError | null {
+    // 1) structured cause (cuando Prisma lo provee)
+    const cause: PgError | undefined =
+      (e?.cause as PgError) ||
+      (e?.meta?.cause as PgError) ||
+      (typeof e?.meta === 'object' ? (e.meta as any)?.cause : undefined);
+
+    if (cause?.code) return cause;
+
+    // 2) PrismaClientUnknownRequestError: parsear message
+    const msg = String(e?.message ?? '');
+
+    const m =
+      msg.match(/code:\s*"(\w+)"/) ??
+      msg.match(/PostgresError\s*\{\s*code:\s*"(\w+)"/);
+
+    if (!m?.[1]) return null;
+
+    const d =
+      msg.match(/detail:\s*Some\("([^"]+)"\)/) ??
+      msg.match(/detail:\s*"([^"]+)"/);
+
+    const out: PgError = new Error('PostgresError');
+    out.code = m[1];
+    if (d?.[1]) out.detail = d[1];
+
+    return out;
   }
 }

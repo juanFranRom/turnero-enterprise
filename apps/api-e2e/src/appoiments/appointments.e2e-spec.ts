@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getMetricsText, readCounter } from '../support/metrics-utils';
 
 describe('Appointments (e2e)', () => {
   const baseURL = process.env.NX_BASE_URL ?? 'http://localhost:3000';
@@ -17,7 +18,7 @@ describe('Appointments (e2e)', () => {
     const r = await client.post(
       '/api/auth/login',
       { email, password },
-      { headers: { 'X-Tenant-Slug': tenantSlug } },
+      { headers: { 'X-Tenant-Slug': tenantSlug, 'x-e2e': '1' } },
     );
 
     accessToken = r.data.accessToken;
@@ -30,6 +31,7 @@ describe('Appointments (e2e)', () => {
             headers: {
             'X-Tenant-Slug': tenantSlug,
             Authorization: `Bearer ${token}`,
+            'x-e2e': '1'
             },
         });
 
@@ -59,6 +61,7 @@ describe('Appointments (e2e)', () => {
             headers: {
                 'X-Tenant-Slug': tenantSlug,
                 Authorization: `Bearer ${accessToken}`,
+                'x-e2e': '1'
             },
         });
 
@@ -82,8 +85,9 @@ describe('Appointments (e2e)', () => {
         try {
             await client.post('/api/appointments', body, {
                 headers: {
-                'X-Tenant-Slug': tenantSlug,
-                Authorization: `Bearer ${accessToken}`,
+                    'X-Tenant-Slug': tenantSlug,
+                    Authorization: `Bearer ${accessToken}`,
+                    'x-e2e': '1'
                 },
             });
             throw new Error('Expected 400');
@@ -93,7 +97,7 @@ describe('Appointments (e2e)', () => {
         }
     });
 
-    it('overlap is enforced at DB level (one wins, one 409)', async () => {
+    it('overlap is enforced at DB level (one wins, one 409) and increments overlap metric', async () => {
         const slot = await getFirstSlot(client, tenantSlug, accessToken, {
             locationId, resourceId, serviceId, date: '2026-02-23',
         });
@@ -110,7 +114,14 @@ describe('Appointments (e2e)', () => {
         const headers = {
             'X-Tenant-Slug': tenantSlug,
             Authorization: `Bearer ${accessToken}`,
+            'x-e2e': '1',
         };
+
+        // metrics BEFORE
+        const beforeText = await getMetricsText(client, headers);
+        const beforeOverlap = readCounter(beforeText, 'appointment_overlap_conflicts_total', {
+            tenant: tenantSlug,
+        });
 
         const results = await Promise.allSettled([
             client.post('/api/appointments', body, { headers }),
@@ -135,5 +146,19 @@ describe('Appointments (e2e)', () => {
         } else {
             expect(JSON.stringify(bad[0].reason.response.data)).toContain('OUTSIDE_AVAILABILITY');
         }
-    });
+
+        // metrics AFTER
+        const afterText = await getMetricsText(client, headers);
+        const afterOverlap = readCounter(afterText, 'appointment_overlap_conflicts_total', {
+            tenant: tenantSlug,
+        });
+
+        if (status === 409) {
+            // ✅ solo se incrementa si realmente hubo 23P01 → 409
+            expect(afterOverlap).toBe(beforeOverlap + 1);
+        } else {
+            // ✅ si fue precheck 400, no debería tocarse el counter
+            expect(afterOverlap).toBe(beforeOverlap);
+        }
+        });
 });

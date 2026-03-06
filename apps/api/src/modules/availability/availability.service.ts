@@ -5,6 +5,7 @@ import { AvailabilityEngine } from '../../domain/availability/availability.engin
 import { mapBusy, mapOverrides, mapWeeklySchedule } from '../../infrastructure/adapters/availability/availability.mapper';
 import { buildOpenIntervalsForDate } from './availability.intervals';
 import type { GetAvailabilityResponse } from './dtos/get-availability.response';
+import { buildLocalDayRange } from '../../common/calendar/day-range';
 
 @Injectable()
 export class AvailabilityService {
@@ -29,9 +30,12 @@ export class AvailabilityService {
 
     const tz = location.timeZone;
 
-    const day = DateTime.fromISO(date, { zone: tz });
-    const from = day.startOf('day').toISO()!;
-    const to = day.endOf('day').plus({ millisecond: 1 }).toISO()!;
+    const r = buildLocalDayRange({ dateISO: date, tz });
+
+    const from = r.fromUtc;
+    const to = r.toUtc;
+    const fromIso = r.fromIso;
+    const toIso = r.toIso;
 
     const [weeklyRows, overrideRows, busyRows, svc] = await Promise.all([
       this.prisma.weeklySchedule.findMany({
@@ -40,10 +44,10 @@ export class AvailabilityService {
           locationId,
           resourceId,
           // (opcional pero recomendado) vigencia:
-          effectiveFrom: { lte: new Date(to) },
-          OR: [{ effectiveTo: null }, { effectiveTo: { gte: new Date(from) } }],
+          effectiveFrom: { lte: to },
+          OR: [{ effectiveTo: null }, { effectiveTo: { gte: from } }],
           // y día:
-          dayOfWeek: day.weekday, // Luxon: 1..7
+          dayOfWeek: r.day.weekday, // Luxon: 1..7
         },
         select: { dayOfWeek: true, startTime: true, endTime: true },
         orderBy: [{ startTime: 'asc' }],
@@ -54,8 +58,8 @@ export class AvailabilityService {
           tenantId,
           locationId,
           resourceId,
-          startsAt: { lt: new Date(to) },
-          endsAt: { gt: new Date(from) },
+          startsAt: { lt: to },
+          endsAt: { gt: from },
         },
         select: { kind: true, startsAt: true, endsAt: true },
       }),
@@ -66,8 +70,8 @@ export class AvailabilityService {
           locationId,
           resourceId,
           status: { in: ['BOOKED', 'CONFIRMED'] },
-          startsAt: { lt: new Date(to) },
-          endsAt: { gt: new Date(from) },
+          startsAt: { lt: to },
+          endsAt: { gt: from },
         },
         select: { startsAt: true, endsAt: true },
       }),
@@ -82,7 +86,7 @@ export class AvailabilityService {
 
     const input = {
       timezone: tz,
-      range: { from, to },
+      range: { from: fromIso, to: toIso },
       weekly: mapWeeklySchedule(weeklyRows, tz),
       overrides: mapOverrides(overrideRows as any),
       busy: mapBusy(busyRows),
@@ -104,11 +108,9 @@ export class AvailabilityService {
 
     const busyIntervals = mapBusy(busyRows);
 
-    const dateOnly = DateTime.fromISO(date, { zone: tz }).toISODate()!;
-
     return {
       meta: {
-        date: dateOnly,
+        date: r.dateOnly,
         timezone: tz,
         service: {
           id: serviceId,

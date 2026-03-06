@@ -7,17 +7,13 @@ import type {
   TimeRange,
   AvailabilityOverride,
 } from './availability.types';
-
-function parseHm(time: string) {
-  const [hh, mm] = time.split(':').map(Number);
-  return { hh, mm };
-}
+import { parseHHmm } from '../../common/calendar/time-of-day';
 
 function dayRangesToIntervals(dayStart: DateTime, ranges: TimeRange[]) {
     if (!Array.isArray(ranges)) return [];
     return ranges.map((r) => {
-        const s = parseHm(r.start);
-        const e = parseHm(r.end);
+        const s = parseHHmm(r.start);
+        const e = parseHHmm(r.end);
         const start = dayStart.set({ hour: s.hh, minute: s.mm, second: 0, millisecond: 0 });
         const end = dayStart.set({ hour: e.hh, minute: e.mm, second: 0, millisecond: 0 });
         return Interval.fromDateTimes(start, end);

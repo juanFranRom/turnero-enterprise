@@ -1,4 +1,4 @@
-import type { AuthUser } from '../auth/types/auth-user.type';
+import type { AuthUser } from '../modules/auth/types/auth-user.type';
 
 export type TenantCtx = {
   id: string;
@@ -7,12 +7,23 @@ export type TenantCtx = {
   planId: string;
 };
 
+export type LogContext = {
+  correlationId: string | null;
+  tenantId: string | null;
+  tenantSlug: string | null;
+  userId: string | null;
+  role: string | null;
+  sid: string | null;
+};
+
 declare global {
   namespace Express {
     interface Request {
-      user?: AuthUser;
+      auth?: AuthUser;
       tenant?: TenantCtx | null;
       tenantSlug?: string;
+      correlationId?: string;
+      logContext?: LogContext;
     }
   }
 }

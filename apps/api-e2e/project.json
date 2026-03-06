@@ -9,7 +9,8 @@
       "outputs": ["{workspaceRoot}/coverage/{e2eProjectRoot}"],
       "options": {
         "jestConfig": "apps/api-e2e/jest.config.cts",
-        "passWithNoTests": true
+        "passWithNoTests": true,
+        "runInBand": true
       },
       "dependsOn": ["api:build", "api:serve"]
     }

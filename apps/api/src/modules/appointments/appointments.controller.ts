@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Patch, Post, UseGuards, Headers, BadRequestException } from '@nestjs/common';
+import { Body, Controller, Param, Patch, Post, UseGuards, Headers, BadRequestException, NotFoundException, Query, Get  } from '@nestjs/common';
 import { AppointmentsService } from './appointments.service';
 import { CreateAppointmentDto } from './dtos/create-appointment.dto';
 import { Tenant } from '../tenants/decorators/tenant.decorator';
@@ -8,6 +8,9 @@ import { TenantMembershipGuard } from '../auth/guards/tenant-membership.guard';
 import { TenantCtx } from '../../common/types/request-context';
 import { CancelAppointmentDto } from './dtos/cancel-appointment.dto';
 import { RescheduleAppointmentDto } from './dtos/reschedule-appointment.dto';
+import { AppointmentResponseDto } from './dtos/appointment-response.dto';
+import { GetAppointmentHistoryQueryDto } from './dtos/get-appointment-history.dto';
+import { GetAppointmentsHistoryGlobalQueryDto } from './dtos/get-appointments-history-global.dto';
 
 
 @Controller('appointments')
@@ -20,7 +23,7 @@ export class AppointmentsController {
     @Tenant() tenant:TenantCtx,
     @CurrentUser() user: { userId: string },
     @Body() dto: CreateAppointmentDto,
-  ) {
+  ): Promise<AppointmentResponseDto>  {
     return this.service.create(tenant, user.userId, dto);
   }
 
@@ -31,7 +34,7 @@ export class AppointmentsController {
     @Param('id') id: string,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Body() dto: CancelAppointmentDto,
-  ) {
+  ): Promise<AppointmentResponseDto>  {
     
     const finalKey = idempotencyKey ?? dto.idempotencyKey;
     if (finalKey && finalKey.length > 80) {
@@ -60,7 +63,7 @@ export class AppointmentsController {
     @Param('id') id: string,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Body() dto: RescheduleAppointmentDto,
-  ) {
+  ): Promise<AppointmentResponseDto>  {
 
     const finalKey = idempotencyKey ?? dto.idempotencyKey;
     if (finalKey && finalKey.length > 80) {
@@ -79,6 +82,44 @@ export class AppointmentsController {
     return this.service.reschedule(tenant, user.userId, id, {
       ...dto,
       idempotencyKey: idempotencyKey ?? dto.idempotencyKey,
+    });
+  }
+
+  @Get(':id/history')
+  async history(
+    @Param('id') id: string,
+    @Query() query: GetAppointmentHistoryQueryDto,
+    @Tenant() tenant: TenantCtx | null,
+  ) {
+    if (!tenant) throw new NotFoundException();
+
+    return this.service.getAppointmentHistory({
+      tenantId: tenant.id,
+      appointmentId: id,
+      limit: query.limit,
+      cursor: query.cursor,
+    });
+  }
+
+  @Get('history')
+  async historyGlobal(
+    @Query() query: GetAppointmentsHistoryGlobalQueryDto,
+    @Tenant() tenant: TenantCtx | null,
+  ) {
+    if (!tenant) throw new NotFoundException();
+
+    return this.service.getAppointmentsHistoryGlobal({
+      tenantId: tenant.id,
+      limit: query.limit,
+      cursor: query.cursor,
+      action: query.action,
+      direction: query.direction,
+      actorUserId: query.actorUserId,
+      appointmentId: query.appointmentId,
+      resourceId: query.resourceId,
+      locationId: query.locationId,
+      from: query.from,
+      to: query.to,
     });
   }
   

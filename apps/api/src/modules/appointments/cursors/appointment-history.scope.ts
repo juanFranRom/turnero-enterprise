@@ -1,0 +1,1 @@
+export type AppointmentHistoryScope = { appointmentId: string };

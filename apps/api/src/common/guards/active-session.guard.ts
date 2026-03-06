@@ -7,10 +7,10 @@ export class ActiveSessionGuard implements CanActivate {
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<any>();
-    const user = req.user;
+    const user = req.auth;
     const tenant = req.tenant;
 
-    // req.user viene normalizado por tu JwtAccessStrategy: { userId, tenantId, sid, role }
+    // req.auth viene normalizado por tu JwtAccessStrategy: { userId, tenantId, sid, role }
     const sid = user?.sid as string | undefined;
     const userId = user?.userId as string | undefined;
     const tenantId = tenant?.id as string | undefined;
