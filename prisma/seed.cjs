@@ -180,14 +180,6 @@ async function main() {
     },
   });
   */
-
-  console.log('Seed completed', {
-    tenant: tenant.slug,
-    owner: email,
-    location: location.name,
-    resource: resource.name,
-    service: service.name,
-  });
 }
 
 main()

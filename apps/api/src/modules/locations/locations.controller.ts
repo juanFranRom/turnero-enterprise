@@ -23,9 +23,7 @@ import { ListLocationsQuery } from './dto/list-locations.query';
 @Controller('locations')
 @UseGuards(JwtAuthGuard, TenantMembershipGuard)
 export class LocationsController {
-  constructor(private readonly locations: LocationsService) {
-    console.log("se levanto locations")
-  }
+  constructor(private readonly locations: LocationsService) { }
 
   @Post()
   async create(@Tenant() tenant: TenantCtx | null, @Body() dto: CreateLocationDto) {

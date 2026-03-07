@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { AvailabilityOverridesService } from './availability-overrides.service';
 import { CreateAvailabilityOverrideDto } from './dtos/create-availability-override.dto';
@@ -14,8 +15,11 @@ import { UpdateAvailabilityOverrideDto } from './dtos/update-availability-overri
 import { ListAvailabilityOverridesQueryDto } from './dtos/list-availability-overrides.query.dto';
 import { Tenant } from '../tenants/decorators/tenant.decorator';
 import { TenantCtx } from '../../types/express';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { TenantMembershipGuard } from '../auth/guards/tenant-membership.guard';
 
 @Controller('availability-overrides')
+@UseGuards(JwtAuthGuard, TenantMembershipGuard)
 export class AvailabilityOverridesController {
   constructor(
     private readonly availabilityOverridesService: AvailabilityOverridesService,
