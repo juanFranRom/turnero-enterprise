@@ -21,27 +21,54 @@ import { CreateResourceServiceDto } from './dtos/create-resource-service.dto';
 export class ResourceServicesController {
   constructor(private readonly resourceServices: ResourceServicesService) {}
 
+  private getTenantIdOrThrow(tenant: TenantCtx | null): string {
+    if (!tenant) {
+      throw new UnauthorizedException({
+        error: {
+          code: 'TENANT_CONTEXT_REQUIRED',
+          message: 'Tenant context is required',
+        },
+      });
+    }
+
+    return tenant.id;
+  }
+
   @Post('resource-services')
-  async link(@Tenant() tenant: TenantCtx | null, @Body() dto: CreateResourceServiceDto) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.resourceServices.link(tenant.id, dto);
+  async link(
+    @Tenant() tenant: TenantCtx | null,
+    @Body() dto: CreateResourceServiceDto,
+  ) {
+    return this.resourceServices.link(this.getTenantIdOrThrow(tenant), dto);
   }
 
   @Delete('resource-services/:id')
-  async unlink(@Tenant() tenant: TenantCtx | null, @Param('id') id: string) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.resourceServices.unlink(tenant.id, id);
+  async unlink(
+    @Tenant() tenant: TenantCtx | null,
+    @Param('id') id: string,
+  ) {
+    return this.resourceServices.unlink(this.getTenantIdOrThrow(tenant), id);
   }
 
   @Get('resources/:resourceId/services')
-  async listServices(@Tenant() tenant: TenantCtx | null, @Param('resourceId') resourceId: string) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.resourceServices.listServicesForResource(tenant.id, resourceId);
+  async listServices(
+    @Tenant() tenant: TenantCtx | null,
+    @Param('resourceId') resourceId: string,
+  ) {
+    return this.resourceServices.listServicesForResource(
+      this.getTenantIdOrThrow(tenant),
+      resourceId,
+    );
   }
 
   @Get('services/:serviceId/resources')
-  async listResources(@Tenant() tenant: TenantCtx | null, @Param('serviceId') serviceId: string) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.resourceServices.listResourcesForService(tenant.id, serviceId);
+  async listResources(
+    @Tenant() tenant: TenantCtx | null,
+    @Param('serviceId') serviceId: string,
+  ) {
+    return this.resourceServices.listResourcesForService(
+      this.getTenantIdOrThrow(tenant),
+      serviceId,
+    );
   }
 }

@@ -25,14 +25,25 @@ import { ListResourcesQuery } from './dtos/list-resources.query';
 export class ResourcesController {
   constructor(private readonly resources: ResourcesService) {}
 
+  private getTenantIdOrThrow(tenant: TenantCtx | null): string {
+    if (!tenant) {
+      throw new UnauthorizedException({
+        error: {
+          code: 'TENANT_CONTEXT_REQUIRED',
+          message: 'Tenant context is required',
+        },
+      });
+    }
+
+    return tenant.id;
+  }
+
   @Post()
   async create(
     @Tenant() tenant: TenantCtx | null,
     @Body() dto: CreateResourceDto,
   ) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-
-    return this.resources.create(tenant.id, dto);
+    return this.resources.create(this.getTenantIdOrThrow(tenant), dto);
   }
 
   @Get()
@@ -40,9 +51,7 @@ export class ResourcesController {
     @Tenant() tenant: TenantCtx | null,
     @Query() q: ListResourcesQuery,
   ) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-
-    return this.resources.list(tenant.id, q);
+    return this.resources.list(this.getTenantIdOrThrow(tenant), q);
   }
 
   @Get(':id')
@@ -50,9 +59,7 @@ export class ResourcesController {
     @Tenant() tenant: TenantCtx | null,
     @Param('id') id: string,
   ) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-
-    return this.resources.getById(tenant.id, id);
+    return this.resources.getById(this.getTenantIdOrThrow(tenant), id);
   }
 
   @Patch(':id')
@@ -61,9 +68,7 @@ export class ResourcesController {
     @Param('id') id: string,
     @Body() dto: UpdateResourceDto,
   ) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-
-    return this.resources.update(tenant.id, id, dto);
+    return this.resources.update(this.getTenantIdOrThrow(tenant), id, dto);
   }
 
   @Delete(':id')
@@ -71,8 +76,6 @@ export class ResourcesController {
     @Tenant() tenant: TenantCtx | null,
     @Param('id') id: string,
   ) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-
-    return this.resources.delete(tenant.id, id);
+    return this.resources.delete(this.getTenantIdOrThrow(tenant), id);
   }
 }

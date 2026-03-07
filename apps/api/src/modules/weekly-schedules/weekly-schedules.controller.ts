@@ -25,22 +25,41 @@ import { ListWeeklySchedulesQuery } from './dtos/list-weekly-schedules.query';
 export class WeeklySchedulesController {
   constructor(private readonly weekly: WeeklySchedulesService) {}
 
+  private getTenantIdOrThrow(tenant: TenantCtx | null): string {
+    if (!tenant) {
+      throw new UnauthorizedException({
+        error: {
+          code: 'TENANT_CONTEXT_REQUIRED',
+          message: 'Tenant context is required',
+        },
+      });
+    }
+
+    return tenant.id;
+  }
+
   @Post()
-  async create(@Tenant() tenant: TenantCtx | null, @Body() dto: CreateWeeklyScheduleDto) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.weekly.create(tenant.id, dto);
+  async create(
+    @Tenant() tenant: TenantCtx | null,
+    @Body() dto: CreateWeeklyScheduleDto,
+  ) {
+    return this.weekly.create(this.getTenantIdOrThrow(tenant), dto);
   }
 
   @Get()
-  async list(@Tenant() tenant: TenantCtx | null, @Query() q: ListWeeklySchedulesQuery) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.weekly.list(tenant.id, q);
+  async list(
+    @Tenant() tenant: TenantCtx | null,
+    @Query() q: ListWeeklySchedulesQuery,
+  ) {
+    return this.weekly.list(this.getTenantIdOrThrow(tenant), q);
   }
 
   @Get(':id')
-  async get(@Tenant() tenant: TenantCtx | null, @Param('id') id: string) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.weekly.getById(tenant.id, id);
+  async get(
+    @Tenant() tenant: TenantCtx | null,
+    @Param('id') id: string,
+  ) {
+    return this.weekly.getById(this.getTenantIdOrThrow(tenant), id);
   }
 
   @Patch(':id')
@@ -49,13 +68,14 @@ export class WeeklySchedulesController {
     @Param('id') id: string,
     @Body() dto: UpdateWeeklyScheduleDto,
   ) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.weekly.update(tenant.id, id, dto);
+    return this.weekly.update(this.getTenantIdOrThrow(tenant), id, dto);
   }
 
   @Delete(':id')
-  async remove(@Tenant() tenant: TenantCtx | null, @Param('id') id: string) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.weekly.delete(tenant.id, id);
+  async remove(
+    @Tenant() tenant: TenantCtx | null,
+    @Param('id') id: string,
+  ) {
+    return this.weekly.delete(this.getTenantIdOrThrow(tenant), id);
   }
 }

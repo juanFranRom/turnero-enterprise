@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -25,8 +26,17 @@ export class AvailabilityOverridesController {
     private readonly availabilityOverridesService: AvailabilityOverridesService,
   ) {}
 
-  private getTenantId(tenant: TenantCtx | null): string {
-    return tenant?.id ?? '';
+  private getTenantIdOrThrow(tenant: TenantCtx | null): string {
+    if (!tenant) {
+      throw new NotFoundException({
+        error: {
+          code: 'TENANT_NOT_FOUND',
+          message: 'Tenant not found',
+        },
+      });
+    }
+
+    return tenant.id;
   }
 
   @Post()
@@ -35,7 +45,7 @@ export class AvailabilityOverridesController {
     @Body() dto: CreateAvailabilityOverrideDto,
   ) {
     return this.availabilityOverridesService.create(
-      this.getTenantId(tenant),
+      this.getTenantIdOrThrow(tenant),
       dto,
     );
   }
@@ -46,7 +56,7 @@ export class AvailabilityOverridesController {
     @Query() query: ListAvailabilityOverridesQueryDto,
   ) {
     return this.availabilityOverridesService.list(
-      this.getTenantId(tenant),
+      this.getTenantIdOrThrow(tenant),
       query,
     );
   }
@@ -57,7 +67,7 @@ export class AvailabilityOverridesController {
     @Param('id') id: string,
   ) {
     return this.availabilityOverridesService.getById(
-      this.getTenantId(tenant),
+      this.getTenantIdOrThrow(tenant),
       id,
     );
   }
@@ -69,7 +79,7 @@ export class AvailabilityOverridesController {
     @Body() dto: UpdateAvailabilityOverrideDto,
   ) {
     return this.availabilityOverridesService.update(
-      this.getTenantId(tenant),
+      this.getTenantIdOrThrow(tenant),
       id,
       dto,
     );
@@ -81,7 +91,7 @@ export class AvailabilityOverridesController {
     @Param('id') id: string,
   ) {
     return this.availabilityOverridesService.delete(
-      this.getTenantId(tenant),
+      this.getTenantIdOrThrow(tenant),
       id,
     );
   }

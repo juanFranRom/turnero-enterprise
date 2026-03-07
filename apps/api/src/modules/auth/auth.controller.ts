@@ -8,18 +8,17 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle, seconds } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { TenantMembershipGuard } from './guards/tenant-membership.guard';
-import { Throttle, seconds } from '@nestjs/throttler';
 import { AntiBruteForceService } from '../security/anti-bruteforce/anti-bruteforce.service';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { AuthUser } from './types/auth-user.type';
 import { Tenant } from '../tenants/decorators/tenant.decorator';
 import { TenantCtx } from '../../types/express';
-
 
 function getRealIp(req: Request): string | null {
   const anyReq = req as any;
@@ -40,29 +39,60 @@ function assertCsrfOrigin(req: Request) {
   const referer = req.headers.referer as string | undefined;
 
   const src = origin ?? referer ?? '';
-  if (!src) throw new UnauthorizedException('CSRF check failed');
+  if (!src) {
+    throw new UnauthorizedException({
+      error: {
+        code: 'CSRF_ORIGIN_REQUIRED',
+        message: 'CSRF check failed',
+      },
+    });
+  }
 
   const ok = allowed.some((a) => src.startsWith(a));
-  if (!ok) throw new UnauthorizedException('CSRF check failed');
+  if (!ok) {
+    throw new UnauthorizedException({
+      error: {
+        code: 'CSRF_ORIGIN_INVALID',
+        message: 'CSRF check failed',
+        details: {
+          origin: origin ?? null,
+          referer: referer ?? null,
+        },
+      },
+    });
+  }
 }
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
-    private readonly antiBruteForce: AntiBruteForceService
+    private readonly antiBruteForce: AntiBruteForceService,
   ) {}
 
-  @Throttle({ burst: { limit: 6, ttl: seconds(10) }, login: { limit: 5, ttl: seconds(60) } }) 
+  @Throttle({
+    burst: { limit: 6, ttl: seconds(10) },
+    login: { limit: 5, ttl: seconds(60) },
+  })
   @Post('login')
-  async login(@Req() req: Request, @Res({ passthrough: true }) res: Response, @Body() dto: LoginDto) {
+  async login(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Body() dto: LoginDto,
+  ) {
     const tenant = (req as any).tenant;
-    if (!tenant) throw new UnauthorizedException('Invalid request');
+    if (!tenant) {
+      throw new UnauthorizedException({
+        error: {
+          code: 'TENANT_CONTEXT_REQUIRED',
+          message: 'Tenant context is required',
+        },
+      });
+    }
 
     const email = (dto.email ?? '').toLowerCase();
     const ip = (req.ips?.[0] ?? req.ip ?? req.socket?.remoteAddress ?? 'unknown') as string;
 
-    // 1) Chequeo de lock ANTES de intentar login
     await this.antiBruteForce.checkOrThrow(String(tenant.id), email, ip);
 
     try {
@@ -74,7 +104,6 @@ export class AuthController {
         ip: ip || null,
       });
 
-      // 2) Éxito => reset de contador/lock
       await this.antiBruteForce.onSuccess(String(tenant.id), email, ip);
 
       this.authService.setRefreshCookie(res, refreshToken);
@@ -88,17 +117,30 @@ export class AuthController {
     }
   }
 
-  @Throttle({ refresh: { limit: 10, ttl: seconds(60) } }) 
+  @Throttle({ refresh: { limit: 10, ttl: seconds(60) } })
   @Post('refresh')
   async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const tenant = (req as any).tenant;
-    if (!tenant) throw new UnauthorizedException('Invalid request');
+    if (!tenant) {
+      throw new UnauthorizedException({
+        error: {
+          code: 'TENANT_CONTEXT_REQUIRED',
+          message: 'Tenant context is required',
+        },
+      });
+    }
 
-    // ✅ CSRF (porque el refresh viene de cookie)
     assertCsrfOrigin(req);
 
     const refreshToken = this.authService.getRefreshFromCookie(req);
-    if (!refreshToken) throw new UnauthorizedException('Missing refresh token');
+    if (!refreshToken) {
+      throw new UnauthorizedException({
+        error: {
+          code: 'REFRESH_TOKEN_MISSING',
+          message: 'Missing refresh token',
+        },
+      });
+    }
 
     const { accessToken, newRefreshToken } = await this.authService.refresh({
       tenantId: tenant.id,
@@ -112,7 +154,7 @@ export class AuthController {
     return { accessToken };
   }
 
-  @Throttle({ logout: { limit:10, ttl: seconds(60) } })
+  @Throttle({ logout: { limit: 10, ttl: seconds(60) } })
   @Post('logout')
   async logout(
     @Req() req: Request,
@@ -120,7 +162,6 @@ export class AuthController {
   ) {
     const tenant = (req as any).tenant;
 
-    // 1) Intento por refresh cookie (si existe)
     if (tenant?.id) {
       const refreshToken = this.authService.getRefreshFromCookie(req);
       if (refreshToken) {
@@ -128,7 +169,6 @@ export class AuthController {
       }
     }
 
-    // 2) Intento por access bearer (aunque esté vencido)
     if (tenant?.id) {
       const auth = req.headers.authorization;
       if (auth?.startsWith('Bearer ')) {
@@ -139,13 +179,11 @@ export class AuthController {
       }
     }
 
-    // 3) Siempre limpiar cookie (aunque no viaje en este endpoint, igual es correcto)
     this.authService.clearRefreshCookie(res);
 
     return { ok: true };
   }
 
-  // Enterprise: requiere access token válido + pertenencia al tenant
   @Throttle({ logoutAll: { limit: 5, ttl: seconds(60) } })
   @Post('logout-all')
   @UseGuards(JwtAuthGuard, TenantMembershipGuard)
@@ -154,9 +192,20 @@ export class AuthController {
     @CurrentUser() user: AuthUser,
     @Res({ passthrough: true }) res: Response,
   ) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
+    if (!tenant) {
+      throw new UnauthorizedException({
+        error: {
+          code: 'TENANT_CONTEXT_REQUIRED',
+          message: 'Tenant context is required',
+        },
+      });
+    }
 
-    await this.authService.logoutAll({ tenantId: tenant.id, userId: user.userId });
+    await this.authService.logoutAll({
+      tenantId: tenant.id,
+      userId: user.userId,
+    });
+
     this.authService.clearRefreshCookie(res);
 
     return { ok: true };

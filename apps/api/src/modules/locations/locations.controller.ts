@@ -23,24 +23,43 @@ import { ListLocationsQuery } from './dto/list-locations.query';
 @Controller('locations')
 @UseGuards(JwtAuthGuard, TenantMembershipGuard)
 export class LocationsController {
-  constructor(private readonly locations: LocationsService) { }
+  constructor(private readonly locations: LocationsService) {}
+
+  private getTenantIdOrThrow(tenant: TenantCtx | null): string {
+    if (!tenant) {
+      throw new UnauthorizedException({
+        error: {
+          code: 'TENANT_CONTEXT_REQUIRED',
+          message: 'Tenant context is required',
+        },
+      });
+    }
+
+    return tenant.id;
+  }
 
   @Post()
-  async create(@Tenant() tenant: TenantCtx | null, @Body() dto: CreateLocationDto) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.locations.create(tenant.id, dto);
+  async create(
+    @Tenant() tenant: TenantCtx | null,
+    @Body() dto: CreateLocationDto,
+  ) {
+    return this.locations.create(this.getTenantIdOrThrow(tenant), dto);
   }
 
   @Get()
-  async list(@Tenant() tenant: TenantCtx | null, @Query() q: ListLocationsQuery) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.locations.list(tenant.id, q);
+  async list(
+    @Tenant() tenant: TenantCtx | null,
+    @Query() q: ListLocationsQuery,
+  ) {
+    return this.locations.list(this.getTenantIdOrThrow(tenant), q);
   }
 
   @Get(':id')
-  async get(@Tenant() tenant: TenantCtx | null, @Param('id') id: string) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.locations.getById(tenant.id, id);
+  async get(
+    @Tenant() tenant: TenantCtx | null,
+    @Param('id') id: string,
+  ) {
+    return this.locations.getById(this.getTenantIdOrThrow(tenant), id);
   }
 
   @Patch(':id')
@@ -49,14 +68,15 @@ export class LocationsController {
     @Param('id') id: string,
     @Body() dto: UpdateLocationDto,
   ) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.locations.update(tenant.id, id, dto);
+    return this.locations.update(this.getTenantIdOrThrow(tenant), id, dto);
   }
 
   // Soft delete => isActive=false
   @Delete(':id')
-  async remove(@Tenant() tenant: TenantCtx | null, @Param('id') id: string) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.locations.delete(tenant.id, id);
+  async remove(
+    @Tenant() tenant: TenantCtx | null,
+    @Param('id') id: string,
+  ) {
+    return this.locations.delete(this.getTenantIdOrThrow(tenant), id);
   }
 }

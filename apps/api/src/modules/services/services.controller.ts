@@ -25,33 +25,57 @@ import { ListServicesQuery } from './dtos/list-services.query';
 export class ServicesController {
   constructor(private readonly services: ServicesService) {}
 
+  private getTenantIdOrThrow(tenant: TenantCtx | null): string {
+    if (!tenant) {
+      throw new UnauthorizedException({
+        error: {
+          code: 'TENANT_CONTEXT_REQUIRED',
+          message: 'Tenant context is required',
+        },
+      });
+    }
+
+    return tenant.id;
+  }
+
   @Post()
-  async create(@Tenant() tenant: TenantCtx | null, @Body() dto: CreateServiceDto) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.services.create(tenant.id, dto);
+  async create(
+    @Tenant() tenant: TenantCtx | null,
+    @Body() dto: CreateServiceDto,
+  ) {
+    return this.services.create(this.getTenantIdOrThrow(tenant), dto);
   }
 
   @Get()
-  async list(@Tenant() tenant: TenantCtx | null, @Query() q: ListServicesQuery) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.services.list(tenant.id, q);
+  async list(
+    @Tenant() tenant: TenantCtx | null,
+    @Query() q: ListServicesQuery,
+  ) {
+    return this.services.list(this.getTenantIdOrThrow(tenant), q);
   }
 
   @Get(':id')
-  async get(@Tenant() tenant: TenantCtx | null, @Param('id') id: string) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.services.getById(tenant.id, id);
+  async get(
+    @Tenant() tenant: TenantCtx | null,
+    @Param('id') id: string,
+  ) {
+    return this.services.getById(this.getTenantIdOrThrow(tenant), id);
   }
 
   @Patch(':id')
-  async update(@Tenant() tenant: TenantCtx | null, @Param('id') id: string, @Body() dto: UpdateServiceDto) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.services.update(tenant.id, id, dto);
+  async update(
+    @Tenant() tenant: TenantCtx | null,
+    @Param('id') id: string,
+    @Body() dto: UpdateServiceDto,
+  ) {
+    return this.services.update(this.getTenantIdOrThrow(tenant), id, dto);
   }
 
   @Delete(':id')
-  async remove(@Tenant() tenant: TenantCtx | null, @Param('id') id: string) {
-    if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.services.delete(tenant.id, id);
+  async remove(
+    @Tenant() tenant: TenantCtx | null,
+    @Param('id') id: string,
+  ) {
+    return this.services.delete(this.getTenantIdOrThrow(tenant), id);
   }
 }

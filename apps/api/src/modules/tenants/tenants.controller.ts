@@ -1,4 +1,10 @@
-import { Controller, Get, Headers, BadRequestException, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Headers,
+  UseGuards,
+} from '@nestjs/common';
 import { TenantsService } from './tenants.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantMembershipGuard } from '../auth/guards/tenant-membership.guard';
@@ -10,7 +16,15 @@ export class TenantsController {
 
   @Get('me')
   async me(@Headers('x-tenant-slug') tenantSlug?: string) {
-    if (!tenantSlug) throw new BadRequestException('Missing X-Tenant-Slug header');
+    if (!tenantSlug) {
+      throw new BadRequestException({
+        error: {
+          code: 'TENANT_SLUG_REQUIRED',
+          message: 'Missing X-Tenant-Slug header',
+        },
+      });
+    }
+
     return this.tenantsService.findBySlug(tenantSlug);
   }
 }
