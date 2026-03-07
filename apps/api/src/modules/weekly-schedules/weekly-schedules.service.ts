@@ -1,8 +1,8 @@
 import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
+	BadRequestException,
+	ConflictException,
+	Injectable,
+	NotFoundException,
 } from '@nestjs/common';
 import { Prisma, WeeklySchedule } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
@@ -10,139 +10,319 @@ import { CreateWeeklyScheduleDto } from './dtos/create-weekly-schedule.dto';
 import { UpdateWeeklyScheduleDto } from './dtos/update-weekly-schedule.dto';
 import { ListWeeklySchedulesQuery } from './dtos/list-weekly-schedules.query';
 import { hhmmToDbTime } from '../../common/calendar/time-of-day';
-import { parseOptionalDate } from '../../common/calendar/dates'; 
+import { parseOptionalDate } from '../../common/calendar/dates';
 import { assertIntervalValid } from '../../common/calendar/intervals';
-
+import { OwnerCrudMetrics } from '../../common/metrics';
 
 @Injectable()
 export class WeeklySchedulesService {
-  constructor(private readonly prisma: PrismaService) {}
+	private readonly metricEntity = 'weekly_schedule' as const;
 
-  private async assertLocationResourceSameTenant(tenantId: string, locationId: string, resourceId: string) {
-    const [loc, res] = await Promise.all([
-      this.prisma.location.findFirst({ where: { id: locationId, tenantId }, select: { id: true } }),
-      this.prisma.resource.findFirst({ where: { id: resourceId, tenantId }, select: { id: true, locationId: true } }),
-    ]);
+	constructor(
+		private readonly prisma: PrismaService,
+		private readonly ownerCrudMetrics: OwnerCrudMetrics,
+	) {}
 
-    if (!loc) throw new NotFoundException({ code: 'LOCATION_NOT_FOUND', message: 'Location not found' });
-    if (!res) throw new NotFoundException({ code: 'RESOURCE_NOT_FOUND', message: 'Resource not found' });
+	private async assertLocationResourceSameTenant(
+		tenantId: string,
+		locationId: string,
+		resourceId: string,
+		action: 'create' | 'update',
+	) {
+		const [loc, res] = await Promise.all([
+			this.prisma.location.findFirst({
+				where: { id: locationId, tenantId },
+				select: { id: true },
+			}),
+			this.prisma.resource.findFirst({
+				where: { id: resourceId, tenantId },
+				select: { id: true, locationId: true },
+			}),
+		]);
 
-    // hardening: resource debe pertenecer a esa location (en tu schema Resource tiene locationId)
-    if (res.locationId !== locationId) {
-      throw new BadRequestException({
-        code: 'RESOURCE_LOCATION_MISMATCH',
-        message: 'Resource does not belong to location',
-      });
-    }
-  }
+		if (!loc) {
+			this.ownerCrudMetrics.validationError({
+				entity: this.metricEntity,
+				action,
+				code: 'LOCATION_NOT_FOUND',
+				tenant: tenantId,
+			});
 
-  async create(tenantId: string, dto: CreateWeeklyScheduleDto): Promise<WeeklySchedule> {
-    const start = hhmmToDbTime(dto.startTime);
-    const end = hhmmToDbTime(dto.endTime);
-    try {
-    assertIntervalValid({ start, end }); // INVALID_INTERVAL
-    } catch {
-    throw new BadRequestException({ code: 'INVALID_TIME_RANGE', message: 'endTime must be after startTime' });
-}
+			throw new NotFoundException({
+				code: 'LOCATION_NOT_FOUND',
+				message: 'Location not found',
+			});
+		}
 
-    const effectiveFrom = parseOptionalDate(dto.effectiveFrom) ?? new Date();
-    const effectiveTo = parseOptionalDate(dto.effectiveTo);
+		if (!res) {
+			this.ownerCrudMetrics.validationError({
+				entity: this.metricEntity,
+				action,
+				code: 'RESOURCE_NOT_FOUND',
+				tenant: tenantId,
+			});
 
-    await this.assertLocationResourceSameTenant(tenantId, dto.locationId, dto.resourceId);
+			throw new NotFoundException({
+				code: 'RESOURCE_NOT_FOUND',
+				message: 'Resource not found',
+			});
+		}
 
-    try {
-      return await this.prisma.weeklySchedule.create({
-        data: {
-          tenantId,
-          locationId: dto.locationId,
-          resourceId: dto.resourceId,
-          dayOfWeek: dto.dayOfWeek,
-          startTime: start,
-          endTime: end,
-          effectiveFrom: effectiveFrom!,
-          effectiveTo: effectiveTo === undefined ? null : effectiveTo,
-        },
-      });
-    } catch (e: any) {
-      // unique([tenantId, resourceId, dayOfWeek, startTime, endTime])
-      if (e?.code === 'P2002') {
-        throw new ConflictException({
-          code: 'WEEKLY_SCHEDULE_DUPLICATE',
-          message: 'Weekly schedule already exists',
-        });
-      }
-      throw e;
-    }
-  }
+		if (res.locationId !== locationId) {
+			this.ownerCrudMetrics.validationError({
+				entity: this.metricEntity,
+				action,
+				code: 'RESOURCE_LOCATION_MISMATCH',
+				tenant: tenantId,
+			});
 
-  async list(tenantId: string, q: ListWeeklySchedulesQuery) {
-    const where: Prisma.WeeklyScheduleWhereInput = {
-      tenantId,
-      ...(q.resourceId ? { resourceId: q.resourceId } : {}),
-      ...(q.locationId ? { locationId: q.locationId } : {}),
-      ...(q.dayOfWeek ? { dayOfWeek: q.dayOfWeek } : {}),
-    };
+			throw new BadRequestException({
+				code: 'RESOURCE_LOCATION_MISMATCH',
+				message: 'Resource does not belong to location',
+			});
+		}
+	}
 
-    return this.prisma.weeklySchedule.findMany({
-      where,
-      orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
-    });
-  }
+	private assertValidTimeRange(
+		start: Date,
+		end: Date,
+		tenantId: string,
+		action: 'create' | 'update',
+	) {
+		try {
+			assertIntervalValid({ start, end });
+		} catch {
+			this.ownerCrudMetrics.validationError({
+				entity: this.metricEntity,
+				action,
+				code: 'INVALID_TIME_RANGE',
+				tenant: tenantId,
+			});
 
-  async getById(tenantId: string, id: string) {
-    const row = await this.prisma.weeklySchedule.findFirst({ where: { id, tenantId } });
-    if (!row) throw new NotFoundException({ code: 'WEEKLY_SCHEDULE_NOT_FOUND', message: 'Weekly schedule not found' });
-    return row;
-  }
+			throw new BadRequestException({
+				code: 'INVALID_TIME_RANGE',
+				message: 'endTime must be after startTime',
+			});
+		}
+	}
 
-  async update(tenantId: string, id: string, dto: UpdateWeeklyScheduleDto) {
-    const existing = await this.getById(tenantId, id);
+	private parseEffectiveDate(
+		input: string | null | undefined,
+		tenantId: string,
+		action: 'create' | 'update',
+	): Date | null | undefined {
+		try {
+			return parseOptionalDate(input);
+		} catch {
+			this.ownerCrudMetrics.validationError({
+				entity: this.metricEntity,
+				action,
+				code: 'INVALID_DATE',
+				tenant: tenantId,
+			});
 
-    const locationId = dto.locationId ?? existing.locationId;
-    const resourceId = dto.resourceId ?? existing.resourceId;
+			throw new BadRequestException({
+				code: 'INVALID_DATE',
+				message: 'Invalid date',
+			});
+		}
+	}
 
-    await this.assertLocationResourceSameTenant(tenantId, locationId, resourceId);
+	async create(tenantId: string, dto: CreateWeeklyScheduleDto): Promise<WeeklySchedule> {
+		return this.ownerCrudMetrics.track({
+			entity: this.metricEntity,
+			action: 'create',
+			tenant: tenantId,
+			run: async () => {
+				const start = hhmmToDbTime(dto.startTime);
+				const end = hhmmToDbTime(dto.endTime);
 
-    const start = dto.startTime ? hhmmToDbTime(dto.startTime) : existing.startTime;
-    const end = dto.endTime ? hhmmToDbTime(dto.endTime) : existing.endTime;
+				this.assertValidTimeRange(start, end, tenantId, 'create');
 
-    try {
-        assertIntervalValid({ start, end }); // INVALID_INTERVAL
-    } catch {
-        throw new BadRequestException({ code: 'INVALID_TIME_RANGE', message: 'endTime must be after startTime' });
-    }
+				const effectiveFrom =
+					this.parseEffectiveDate(dto.effectiveFrom, tenantId, 'create') ??
+					new Date();
 
-    const effectiveFrom = dto.effectiveFrom !== undefined ? (parseOptionalDate(dto.effectiveFrom) ?? new Date()) : existing.effectiveFrom;
-    const effectiveTo =
-      dto.effectiveTo !== undefined ? parseOptionalDate(dto.effectiveTo) : existing.effectiveTo;
+				const effectiveTo = this.parseEffectiveDate(
+					dto.effectiveTo,
+					tenantId,
+					'create',
+				);
 
-    try {
-      return await this.prisma.weeklySchedule.update({
-        where: { id },
-        data: {
-          locationId,
-          resourceId,
-          ...(dto.dayOfWeek !== undefined ? { dayOfWeek: dto.dayOfWeek } : {}),
-          startTime: start,
-          endTime: end,
-          effectiveFrom,
-          effectiveTo: effectiveTo === undefined ? null : effectiveTo,
-        },
-      });
-    } catch (e: any) {
-      if (e?.code === 'P2002') {
-        throw new ConflictException({
-          code: 'WEEKLY_SCHEDULE_DUPLICATE',
-          message: 'Weekly schedule already exists',
-        });
-      }
-      throw e;
-    }
-  }
+				await this.assertLocationResourceSameTenant(
+					tenantId,
+					dto.locationId,
+					dto.resourceId,
+					'create',
+				);
 
-  async remove(tenantId: string, id: string) {
-    await this.getById(tenantId, id);
-    await this.prisma.weeklySchedule.delete({ where: { id } });
-    return { ok: true };
-  }
+				try {
+					return await this.prisma.weeklySchedule.create({
+						data: {
+							tenantId,
+							locationId: dto.locationId,
+							resourceId: dto.resourceId,
+							dayOfWeek: dto.dayOfWeek,
+							startTime: start,
+							endTime: end,
+							effectiveFrom,
+							effectiveTo: effectiveTo === undefined ? null : effectiveTo,
+						},
+					});
+				} catch (e: any) {
+					if (e?.code === 'P2002') {
+						this.ownerCrudMetrics.conflictError({
+							entity: this.metricEntity,
+							action: 'create',
+							code: 'WEEKLY_SCHEDULE_DUPLICATE',
+							tenant: tenantId,
+						});
+
+						throw new ConflictException({
+							code: 'WEEKLY_SCHEDULE_DUPLICATE',
+							message: 'Weekly schedule already exists',
+						});
+					}
+
+					throw e;
+				}
+			},
+		});
+	}
+
+	async list(tenantId: string, q: ListWeeklySchedulesQuery) {
+		return this.ownerCrudMetrics.track({
+			entity: this.metricEntity,
+			action: 'list',
+			tenant: tenantId,
+			run: async () => {
+				const where: Prisma.WeeklyScheduleWhereInput = {
+					tenantId,
+					...(q.resourceId ? { resourceId: q.resourceId } : {}),
+					...(q.locationId ? { locationId: q.locationId } : {}),
+					...(q.dayOfWeek ? { dayOfWeek: q.dayOfWeek } : {}),
+				};
+
+				return this.prisma.weeklySchedule.findMany({
+					where,
+					orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
+				});
+			},
+		});
+	}
+
+	async getById(tenantId: string, id: string) {
+		return this.ownerCrudMetrics.track({
+			entity: this.metricEntity,
+			action: 'get',
+			tenant: tenantId,
+			run: async () => {
+				const row = await this.prisma.weeklySchedule.findFirst({
+					where: { id, tenantId },
+				});
+
+				if (!row) {
+					this.ownerCrudMetrics.validationError({
+						entity: this.metricEntity,
+						action: 'get',
+						code: 'WEEKLY_SCHEDULE_NOT_FOUND',
+						tenant: tenantId,
+					});
+
+					throw new NotFoundException({
+						code: 'WEEKLY_SCHEDULE_NOT_FOUND',
+						message: 'Weekly schedule not found',
+					});
+				}
+
+				return row;
+			},
+		});
+	}
+
+	async update(tenantId: string, id: string, dto: UpdateWeeklyScheduleDto) {
+		return this.ownerCrudMetrics.track({
+			entity: this.metricEntity,
+			action: 'update',
+			tenant: tenantId,
+			run: async () => {
+				const existing = await this.getById(tenantId, id);
+
+				const locationId = dto.locationId ?? existing.locationId;
+				const resourceId = dto.resourceId ?? existing.resourceId;
+
+				await this.assertLocationResourceSameTenant(
+					tenantId,
+					locationId,
+					resourceId,
+					'update',
+				);
+
+				const start = dto.startTime
+					? hhmmToDbTime(dto.startTime)
+					: existing.startTime;
+
+				const end = dto.endTime ? hhmmToDbTime(dto.endTime) : existing.endTime;
+
+				this.assertValidTimeRange(start, end, tenantId, 'update');
+
+				const effectiveFrom =
+					dto.effectiveFrom !== undefined
+						? (this.parseEffectiveDate(dto.effectiveFrom, tenantId, 'update') ??
+							new Date())
+						: existing.effectiveFrom;
+
+				const effectiveTo =
+					dto.effectiveTo !== undefined
+						? this.parseEffectiveDate(dto.effectiveTo, tenantId, 'update')
+						: existing.effectiveTo;
+
+				try {
+					return await this.prisma.weeklySchedule.update({
+						where: { id },
+						data: {
+							locationId,
+							resourceId,
+							...(dto.dayOfWeek !== undefined
+								? { dayOfWeek: dto.dayOfWeek }
+								: {}),
+							startTime: start,
+							endTime: end,
+							effectiveFrom,
+							effectiveTo: effectiveTo === undefined ? null : effectiveTo,
+						},
+					});
+				} catch (e: any) {
+					if (e?.code === 'P2002') {
+						this.ownerCrudMetrics.conflictError({
+							entity: this.metricEntity,
+							action: 'update',
+							code: 'WEEKLY_SCHEDULE_DUPLICATE',
+							tenant: tenantId,
+						});
+
+						throw new ConflictException({
+							code: 'WEEKLY_SCHEDULE_DUPLICATE',
+							message: 'Weekly schedule already exists',
+						});
+					}
+
+					throw e;
+				}
+			},
+		});
+	}
+
+	async remove(tenantId: string, id: string) {
+		return this.ownerCrudMetrics.track({
+			entity: this.metricEntity,
+			action: 'delete',
+			tenant: tenantId,
+			run: async () => {
+				await this.getById(tenantId, id);
+				await this.prisma.weeklySchedule.delete({ where: { id } });
+				return { ok: true };
+			},
+		});
+	}
 }

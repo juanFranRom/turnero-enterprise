@@ -62,6 +62,35 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  readonly ownerCrudRequestsTotal = new Counter({
+    name: 'owner_crud_requests_total',
+    help: 'Total owner CRUD requests by entity/action/status',
+    labelNames: ['entity', 'action', 'status', 'tenant'] as const,
+    registers: [this.registry],
+  });
+
+  readonly ownerCrudDurationMs = new Histogram({
+    name: 'owner_crud_duration_ms',
+    help: 'Owner CRUD duration in ms by entity/action',
+    labelNames: ['entity', 'action', 'tenant'] as const,
+    buckets: [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000],
+    registers: [this.registry],
+  });
+
+  readonly ownerCrudValidationErrorsTotal = new Counter({
+    name: 'owner_crud_validation_errors_total',
+    help: 'Total owner CRUD validation errors by entity/action/code',
+    labelNames: ['entity', 'action', 'code', 'tenant'] as const,
+    registers: [this.registry],
+  });
+
+  readonly ownerCrudConflictsTotal = new Counter({
+    name: 'owner_crud_conflicts_total',
+    help: 'Total owner CRUD conflict errors by entity/action/code',
+    labelNames: ['entity', 'action', 'code', 'tenant'] as const,
+    registers: [this.registry],
+  });
+
   constructor() {
     collectDefaultMetrics({
       register: this.registry,
