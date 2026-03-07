@@ -27,6 +27,7 @@ import { ServicesModule } from './modules/services/services.module';
 import { WeeklySchedulesModule } from './modules/weekly-schedules/weekly-schedules.module';
 import { LocationsModule } from './modules/locations/locations.module';
 import { ResourceServicesModule } from './modules/resource-services/resource-services.module';
+import { AvailabilityOverridesModule } from './modules/availability-overrides/availability-overrides.module';
 
 const isE2E = process.env.E2E === '1';
 
@@ -61,6 +62,7 @@ const isE2E = process.env.E2E === '1';
     WeeklySchedulesModule,
     LocationsModule,
     ResourceServicesModule,
+    AvailabilityOverridesModule
   ],
   providers: [
     ActiveSessionGuard,

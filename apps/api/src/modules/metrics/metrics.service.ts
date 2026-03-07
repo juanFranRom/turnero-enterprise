@@ -54,6 +54,13 @@ export class MetricsService {
     labelNames: ['tenant'] as const,
     registers: [this.registry],
   });
+  
+  readonly availabilityOverrideOverlapConflictsTotal = new Counter({
+    name: 'availability_override_overlap_conflicts_total',
+    help: 'Total number of conflicts due to availability override overlap exclusion constraint',
+    labelNames: ['tenant'] as const,
+    registers: [this.registry],
+  });
 
   constructor() {
     collectDefaultMetrics({

@@ -79,12 +79,29 @@ export class PrismaExceptionFilter implements ExceptionFilter {
       if (mappedPg) {
         // ✅ overlap counter
         if (sqlstate === '23P01') {
+          const constraint = pg?.constraint ?? '';
+          const detail = pg?.detail ?? '';
+
           const tenant =
             (req as any).tenant?.slug ??
             (req.headers['x-tenant-slug'] as string | undefined) ??
             'unknown';
 
-          this.metrics.appointmentOverlapConflictsTotal.inc({ tenant });
+          const isAppointmentOverlap =
+            constraint.includes('appointment_no_overlap') ||
+            detail.includes('appointment_no_overlap');
+
+          const isAvailabilityOverrideOverlap =
+            constraint.includes('availability_override_no_overlap') ||
+            detail.includes('availability_override_no_overlap');
+
+          if (isAppointmentOverlap) {
+            this.metrics.appointmentOverlapConflictsTotal.inc({ tenant });
+          }
+
+          if (isAvailabilityOverrideOverlap) {
+            this.metrics.availabilityOverrideOverlapConflictsTotal.inc({ tenant });
+          }
         }
 
         const lvl = mappedPg.status >= 500 ? 'error' : mappedPg.status >= 400 ? 'warn' : 'info';
@@ -112,12 +129,29 @@ export class PrismaExceptionFilter implements ExceptionFilter {
       if (mappedPg) {
         // ✅ overlap counter
         if (sqlstate === '23P01') {
+          const constraint = pg?.constraint ?? '';
+          const detail = pg?.detail ?? '';
+
           const tenant =
             (req as any).tenant?.slug ??
             (req.headers['x-tenant-slug'] as string | undefined) ??
             'unknown';
 
-          this.metrics.appointmentOverlapConflictsTotal.inc({ tenant });
+          const isAppointmentOverlap =
+            constraint.includes('appointment_no_overlap') ||
+            detail.includes('appointment_no_overlap');
+
+          const isAvailabilityOverrideOverlap =
+            constraint.includes('availability_override_no_overlap') ||
+            detail.includes('availability_override_no_overlap');
+
+          if (isAppointmentOverlap) {
+            this.metrics.appointmentOverlapConflictsTotal.inc({ tenant });
+          }
+
+          if (isAvailabilityOverrideOverlap) {
+            this.metrics.availabilityOverrideOverlapConflictsTotal.inc({ tenant });
+          }
         }
 
         const lvl = mappedPg.status >= 500 ? 'error' : mappedPg.status >= 400 ? 'warn' : 'info';
@@ -198,17 +232,51 @@ export class PrismaExceptionFilter implements ExceptionFilter {
   private tryMapPg(e: any): { status: number; body: any } | null {
     const pg = this.extractPgError(e);
     const sqlstate = pg?.code;
+    const constraint = pg?.constraint ?? '';
+    const detail = pg?.detail ?? '';
 
     if (!sqlstate) return null;
 
-    // Caso estrella de Turnero: EXCLUSION CONSTRAINT violation
     if (sqlstate === '23P01') {
+      const isAppointmentOverlap =
+        constraint.includes('appointment_no_overlap') ||
+        detail.includes('appointment_no_overlap');
+
+      if (isAppointmentOverlap) {
+        return {
+          status: HttpStatus.CONFLICT,
+          body: {
+            error: {
+              code: 'APPOINTMENT_OVERLAP',
+              message: 'The appointment overlaps an existing booking',
+            },
+          },
+        };
+      }
+
+      const isAvailabilityOverrideOverlap =
+        constraint.includes('availability_override_no_overlap') ||
+        detail.includes('availability_override_no_overlap');
+
+      if (isAvailabilityOverrideOverlap) {
+        return {
+          status: HttpStatus.CONFLICT,
+          body: {
+            error: {
+              code: 'AVAILABILITY_OVERRIDE_OVERLAP',
+              message: 'Availability override overlaps an existing override',
+            },
+          },
+        };
+      }
+
       return {
         status: HttpStatus.CONFLICT,
         body: {
           error: {
-            code: 'APPOINTMENT_OVERLAP',
-            message: 'The appointment overlaps an existing booking',
+            code: 'EXCLUSION_CONSTRAINT_VIOLATION',
+            message: 'Database exclusion constraint violation',
+            details: pg?.detail ? { detail: pg.detail } : undefined,
           },
         },
       };
@@ -267,7 +335,6 @@ export class PrismaExceptionFilter implements ExceptionFilter {
   }
 
   private extractPgError(e: any): PgError | null {
-    // 1) structured cause (cuando Prisma lo provee)
     const cause: PgError | undefined =
       (e?.cause as PgError) ||
       (e?.meta?.cause as PgError) ||
@@ -275,22 +342,31 @@ export class PrismaExceptionFilter implements ExceptionFilter {
 
     if (cause?.code) return cause;
 
-    // 2) PrismaClientUnknownRequestError: parsear message
     const msg = String(e?.message ?? '');
 
-    const m =
+    const codeMatch =
       msg.match(/code:\s*"(\w+)"/) ??
       msg.match(/PostgresError\s*\{\s*code:\s*"(\w+)"/);
 
-    if (!m?.[1]) return null;
+    if (!codeMatch?.[1]) return null;
 
-    const d =
+    const detailMatch =
       msg.match(/detail:\s*Some\("([^"]+)"\)/) ??
       msg.match(/detail:\s*"([^"]+)"/);
 
+    const constraintMatch =
+      msg.match(/constraint:\s*Some\("([^"]+)"\)/) ??
+      msg.match(/constraint:\s*"([^"]+)"/) ??
+      msg.match(/violates exclusion constraint "([^"]+)"/) ??
+      msg.match(/violates unique constraint "([^"]+)"/) ??
+      msg.match(/violates foreign key constraint "([^"]+)"/) ??
+      msg.match(/violates check constraint "([^"]+)"/);
+
     const out: PgError = new Error('PostgresError');
-    out.code = m[1];
-    if (d?.[1]) out.detail = d[1];
+    out.code = codeMatch[1];
+
+    if (detailMatch?.[1]) out.detail = detailMatch[1];
+    if (constraintMatch?.[1]) out.constraint = constraintMatch[1];
 
     return out;
   }
