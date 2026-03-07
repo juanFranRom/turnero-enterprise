@@ -10,7 +10,7 @@ import { CreateLocationDto } from './dto/create-location.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { ListLocationsQuery } from './dto/list-locations.query';
 import { assertIanaTimeZone } from '../../common/calendar';
-import { listWithCreatedAtCursor } from '../../common/pagination/list-with-cursor';
+import { listWithCreatedAtCursor, toCursorListResponse } from '../../common/pagination/list-with-cursor';
 import { OwnerCrudMetrics } from '../../common/metrics';
 
 type LocationsCursorScope = {
@@ -70,33 +70,26 @@ export class LocationsService {
 	}
 
 	async getById(tenantId: string, id: string): Promise<Location> {
-		return this.ownerCrudMetrics.track({
-			entity: this.metricEntity,
-			action: 'get',
-			tenant: tenantId,
-			run: async () => {
-				const loc = await this.prisma.location.findFirst({
-					where: { id, tenantId },
-				});
+    return this.ownerCrudMetrics.track({
+      entity: this.metricEntity,
+      action: 'get',
+      tenant: tenantId,
+      run: async () => {
+        try {
+          return await this.getByIdOrThrow(tenantId, id);
+        } catch (e) {
+          this.ownerCrudMetrics.validationError({
+            entity: this.metricEntity,
+            action: 'get',
+            code: 'LOCATION_NOT_FOUND',
+            tenant: tenantId,
+          });
 
-				if (!loc) {
-					this.ownerCrudMetrics.validationError({
-						entity: this.metricEntity,
-						action: 'get',
-						code: 'LOCATION_NOT_FOUND',
-						tenant: tenantId,
-					});
-
-					throw new NotFoundException({
-						code: 'LOCATION_NOT_FOUND',
-						message: 'Location not found',
-					});
-				}
-
-				return loc;
-			},
-		});
-	}
+          throw e;
+        }
+      },
+    });
+  }
 
 	async create(tenantId: string, dto: CreateLocationDto): Promise<Location> {
 		return this.ownerCrudMetrics.track({
@@ -138,34 +131,36 @@ export class LocationsService {
 	}
 
 	async list(tenantId: string, q: ListLocationsQuery) {
-		return this.ownerCrudMetrics.track({
-			entity: this.metricEntity,
-			action: 'list',
-			tenant: tenantId,
-			run: async () => {
-				const whereBase: Prisma.LocationWhereInput = {
-					tenantId,
-					...(q.isActive === undefined ? {} : { isActive: q.isActive }),
-					...(q.search
-						? { name: { contains: q.search, mode: 'insensitive' } }
-						: {}),
-				};
+    return this.ownerCrudMetrics.track({
+      entity: this.metricEntity,
+      action: 'list',
+      tenant: tenantId,
+      run: async () => {
+        const whereBase: Prisma.LocationWhereInput = {
+          tenantId,
+          ...(q.isActive === undefined ? {} : { isActive: q.isActive }),
+          ...(q.search
+            ? { name: { contains: q.search, mode: 'insensitive' } }
+            : {}),
+        };
 
-				return listWithCreatedAtCursor<Location, LocationsCursorScope>({
-					tenantId,
-					query: q,
-					scope: {
-						feed: 'locations',
-						isActive: q.isActive ?? undefined,
-						search: q.search ?? undefined,
-						direction: q.direction ?? 'desc',
-					},
-					whereBase,
-					delegate: this.prisma.location,
-				});
-			},
-		});
-	}
+        const result = await listWithCreatedAtCursor<Location, LocationsCursorScope>({
+          tenantId,
+          query: q,
+          scope: {
+            feed: 'locations',
+            isActive: q.isActive ?? undefined,
+            search: q.search ?? undefined,
+            direction: q.direction ?? 'desc',
+          },
+          whereBase,
+          delegate: this.prisma.location,
+        });
+
+        return toCursorListResponse(result);
+      },
+    });
+  }
 
 	async update(tenantId: string, id: string, dto: UpdateLocationDto): Promise<Location> {
 		return this.ownerCrudMetrics.track({
@@ -212,7 +207,7 @@ export class LocationsService {
 		});
 	}
 
-	async softDelete(tenantId: string, id: string): Promise<Location> {
+	async delete(tenantId: string, id: string) {
 		return this.ownerCrudMetrics.track({
 			entity: this.metricEntity,
 			action: 'delete',
@@ -220,10 +215,12 @@ export class LocationsService {
 			run: async () => {
 				const existing = await this.getByIdOrThrow(tenantId, id);
 
-				return this.prisma.location.update({
-					where: { id: existing.id },
-					data: { isActive: false },
-				});
+				await this.prisma.location.update({
+          where: { id: existing.id },
+          data: { isActive: false },
+        });
+
+        return { success: true };
 			},
 		});
 	}

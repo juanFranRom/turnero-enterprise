@@ -46,13 +46,19 @@ export class AppointmentsService {
   }
 
   private mapDomainError(e: unknown): never {
-    if (isDomainError(e)) {
-      if (e.code === 'APPOINTMENT_INVALID_TRANSITION') {
-        throw new ConflictException({ code: e.code, message: e.message, details: e.details });
-      }
-      throw new BadRequestException({ code: e.code, message: e.message, details: e.details });
+    if (!isDomainError(e)) throw e;
+
+    const payload = {
+      code: e.code,
+      message: e.message,
+      details: e.details,
+    };
+
+    if (e.code === 'APPOINTMENT_INVALID_TRANSITION') {
+      throw new ConflictException(payload);
     }
-    throw e;
+
+    throw new BadRequestException(payload);
   }
 
   async create(ctx: TenantCtx, userId: string, dto: CreateAppointmentDto): Promise<AppointmentResponseDto>  {
@@ -64,7 +70,10 @@ export class AppointmentsService {
       where: { id: dto.resourceId, tenantId: ctx.id, locationId: dto.locationId, isActive: true },
       select: { id: true },
     });
-    if (!resource) throw new NotFoundException({ code: 'RESOURCE_NOT_FOUND' });
+    if (!resource) throw new NotFoundException({
+      code: 'RESOURCE_NOT_FOUND',
+      message: 'Resource not found',
+    });
 
     const tz = await this.availabilityPort.getLocationTZ({ tenantId: ctx.id, locationId: dto.locationId });
     const service = await this.availabilityPort.getServiceCfg({ tenantId: ctx.id, locationId: dto.locationId, serviceId: dto.serviceId! });
@@ -136,7 +145,11 @@ export class AppointmentsService {
           endsAt: true,
         },
       });
-      if (!appt) throw new NotFoundException({ code: 'APPOINTMENT_NOT_FOUND' });
+      if (!appt) 
+        throw new NotFoundException({
+          code: 'APPOINTMENT_NOT_FOUND',
+          message: 'Appointment not found',
+        });
 
       if (dto.idempotencyKey && appt.cancelIdempotencyKey === dto.idempotencyKey) {
         const existing = await tx.appointment.findFirstOrThrow({
@@ -205,7 +218,11 @@ export class AppointmentsService {
         },
       });
       this.metrics.appointmentsCancelledTotal.inc({ tenant: ctx.slug });
-      if (r.count !== 1) throw new NotFoundException({ code: 'APPOINTMENT_NOT_FOUND' });
+      if (r.count !== 1) 
+        throw new NotFoundException({
+          code: 'APPOINTMENT_NOT_FOUND',
+          message: 'Appointment not found',
+        });
 
       const updated = await tx.appointment.findFirstOrThrow({ where: { id: appt.id, tenantId: ctx.id } });
 
@@ -244,7 +261,11 @@ export class AppointmentsService {
         endsAt: true,
       },
     });
-    if (!appt) throw new NotFoundException({ code: 'APPOINTMENT_NOT_FOUND' });
+    if (!appt) 
+      throw new NotFoundException({
+        code: 'APPOINTMENT_NOT_FOUND',
+        message: 'Appointment not found',
+      });
 
     // idempotencia simple (si ya se procesó con esa key, NO auditamos de nuevo)
     if (dto.idempotencyKey && appt.rescheduleIdempotencyKey === dto.idempotencyKey) {
@@ -280,7 +301,11 @@ export class AppointmentsService {
       this.mapDomainError(e);
     }
 
-    if (!appt.serviceId) throw new BadRequestException({ code: 'SERVICE_REQUIRED' });
+    if (!appt.serviceId) 
+      throw new BadRequestException({
+        code: 'SERVICE_REQUIRED',
+        message: 'Service required.',
+      });
 
     const tz = await this.availabilityPort.getLocationTZ({ tenantId: ctx.id, locationId: appt.locationId });
     const service = await this.availabilityPort.getServiceCfg({
@@ -407,7 +432,11 @@ export class AppointmentsService {
       where: { id: args.appointmentId, tenantId: args.tenantId },
       select: { id: true },
     });
-    if (!appt) throw new NotFoundException('Appointment not found');
+    if (!appt) 
+      throw new NotFoundException({
+        code: 'APPOINTMENT_NOT_FOUND',
+        message: 'Appointment not found',
+      });
 
     // Cursor keyset (ASC)
     let cursorWhere: any = undefined;
@@ -417,11 +446,22 @@ export class AppointmentsService {
       try {
         c = decodeCursor<AppointmentHistoryScope>(args.cursor);
       } catch {
-        throw new BadRequestException('Invalid cursor');
+        throw new BadRequestException({
+          code: 'INVALID_CURSOR',
+          message: 'Invalid cursor',
+        });
       }
 
-      if (c.tenantId !== args.tenantId) throw new BadRequestException('Invalid cursor');
-      if (c.scope.appointmentId !== args.appointmentId) throw new BadRequestException('Invalid cursor');
+      if (c.tenantId !== args.tenantId) 
+        throw new BadRequestException({
+          code: 'INVALID_CURSOR',
+          message: 'Invalid cursor',
+        });
+      if (c.scope.appointmentId !== args.appointmentId) 
+        throw new BadRequestException({
+          code: 'INVALID_CURSOR',
+          message: 'Invalid cursor',
+        });
 
       cursorWhere = keysetAscCreatedAtId(new Date(c.at), c.id);
     }
@@ -571,7 +611,7 @@ export class AppointmentsService {
         reason: r.reason ?? null,
         metadata: r.metadata ?? null,
       })),
-      nextCursor: result.nextCursor ?? undefined,
+      nextCursor: result.nextCursor ?? null,
     };
   }
 

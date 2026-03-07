@@ -9,7 +9,13 @@ export class MetricsController {
   @Header('Content-Type', 'text/plain; version=0.0.4')
   async getMetrics() {
     const enabled = (process.env.METRICS_ENABLED ?? 'true') === 'true';
-    if (!enabled) throw new ForbiddenException('Metrics disabled');
+
+    if (!enabled) {
+      throw new ForbiddenException({
+        code: 'METRICS_DISABLED',
+        message: 'Metrics endpoint disabled',
+      });
+    }
 
     return await this.metrics.metricsText();
   }

@@ -8,7 +8,10 @@ import { CreateServiceDto } from './dtos/create-service.dto';
 import { UpdateServiceDto } from './dtos/update-service.dto';
 import { ListServicesQuery } from './dtos/list-services.query';
 import { Prisma, type Service } from '@prisma/client';
-import { listWithCreatedAtCursor } from '../../common/pagination/list-with-cursor';
+import {
+	listWithCreatedAtCursor,
+	toCursorListResponse,
+} from '../../common/pagination/list-with-cursor';
 import { OwnerCrudMetrics } from '../../common/metrics';
 
 type ServicesCursorScope = {
@@ -27,7 +30,23 @@ export class ServicesService {
 		private readonly ownerCrudMetrics: OwnerCrudMetrics,
 	) {}
 
-	private async getByIdOrThrow(tenantId: string, id: string) {
+	private async findLocationOrThrow(tenantId: string, locationId: string) {
+		const location = await this.prisma.location.findFirst({
+			where: { id: locationId, tenantId },
+			select: { id: true },
+		});
+
+		if (!location) {
+			throw new NotFoundException({
+				code: 'LOCATION_NOT_FOUND',
+				message: 'Location not found',
+			});
+		}
+
+		return location;
+	}
+
+	private async getByIdOrThrow(tenantId: string, id: string): Promise<Service> {
 		const svc = await this.prisma.service.findFirst({
 			where: { id, tenantId },
 		});
@@ -48,24 +67,7 @@ export class ServicesService {
 			action: 'create',
 			tenant: tenantId,
 			run: async () => {
-				const location = await this.prisma.location.findFirst({
-					where: { id: dto.locationId, tenantId },
-					select: { id: true },
-				});
-
-				if (!location) {
-					this.ownerCrudMetrics.validationError({
-						entity: this.metricEntity,
-						action: 'create',
-						code: 'LOCATION_NOT_FOUND',
-						tenant: tenantId,
-					});
-
-					throw new NotFoundException({
-						code: 'LOCATION_NOT_FOUND',
-						message: 'Location not found',
-					});
-				}
+				await this.findLocationOrThrow(tenantId, dto.locationId);
 
 				try {
 					return await this.prisma.service.create({
@@ -114,7 +116,7 @@ export class ServicesService {
 					...(q.isActive === undefined ? {} : { isActive: q.isActive }),
 				};
 
-				return listWithCreatedAtCursor<Service, ServicesCursorScope>({
+				const result = await listWithCreatedAtCursor<Service, ServicesCursorScope>({
 					tenantId,
 					query: q,
 					scope: {
@@ -126,6 +128,8 @@ export class ServicesService {
 					whereBase,
 					delegate: this.prisma.service,
 				});
+
+				return toCursorListResponse(result);
 			},
 		});
 	}
@@ -136,11 +140,9 @@ export class ServicesService {
 			action: 'get',
 			tenant: tenantId,
 			run: async () => {
-				const svc = await this.prisma.service.findFirst({
-					where: { id, tenantId },
-				});
-
-				if (!svc) {
+				try {
+					return await this.getByIdOrThrow(tenantId, id);
+				} catch (e) {
 					this.ownerCrudMetrics.validationError({
 						entity: this.metricEntity,
 						action: 'get',
@@ -148,13 +150,8 @@ export class ServicesService {
 						tenant: tenantId,
 					});
 
-					throw new NotFoundException({
-						code: 'SERVICE_NOT_FOUND',
-						message: 'Service not found',
-					});
+					throw e;
 				}
-
-				return svc;
 			},
 		});
 	}
@@ -209,7 +206,7 @@ export class ServicesService {
 		});
 	}
 
-	async softDelete(tenantId: string, id: string) {
+	async delete(tenantId: string, id: string) {
 		return this.ownerCrudMetrics.track({
 			entity: this.metricEntity,
 			action: 'delete',
@@ -217,10 +214,12 @@ export class ServicesService {
 			run: async () => {
 				const existing = await this.getByIdOrThrow(tenantId, id);
 
-				return this.prisma.service.update({
+				await this.prisma.service.update({
 					where: { id: existing.id },
 					data: { isActive: false },
 				});
+
+				return { success: true };
 			},
 		});
 	}

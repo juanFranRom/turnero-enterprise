@@ -59,6 +59,6 @@ export class LocationsController {
   @Delete(':id')
   async remove(@Tenant() tenant: TenantCtx | null, @Param('id') id: string) {
     if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.locations.softDelete(tenant.id, id);
+    return this.locations.delete(tenant.id, id);
   }
 }

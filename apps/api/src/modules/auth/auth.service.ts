@@ -7,296 +7,394 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { SessionsService } from '../sessions/sessions.service';
 
 type LoginArgs = {
-  tenantId: string;
-  email: string;
-  password: string;
-  userAgent?: string | string[] | undefined;
-  ip?: string | null;
+	tenantId: string;
+	email: string;
+	password: string;
+	userAgent?: string | string[] | undefined;
+	ip?: string | null;
 };
 
 type RefreshArgs = {
-  tenantId: string;
-  refreshToken: string;
-  userAgent?: string | string[] | undefined;
-  ip?: string | null;
+	tenantId: string;
+	refreshToken: string;
+	userAgent?: string | string[] | undefined;
+	ip?: string | null;
 };
 
 @Injectable()
 export class AuthService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly jwt: JwtService,
-    private readonly sessions: SessionsService,
-  ) {}
+	constructor(
+		private readonly prisma: PrismaService,
+		private readonly jwt: JwtService,
+		private readonly sessions: SessionsService,
+	) {}
 
-  private accessTtlMin(): number {
-    return Number(process.env.JWT_ACCESS_TTL_MIN ?? 15);
-  }
-  private refreshTtlDays(): number {
-    return Number(process.env.JWT_REFRESH_TTL_DAYS ?? 30);
-  }
+	private accessTtlMin(): number {
+		return Number(process.env.JWT_ACCESS_TTL_MIN ?? 15);
+	}
 
-  private cookieName(): string {
-    return process.env.AUTH_COOKIE_NAME ?? 'rt';
-  }
+	private refreshTtlDays(): number {
+		return Number(process.env.JWT_REFRESH_TTL_DAYS ?? 30);
+	}
 
-  setRefreshCookie(res: Response, refreshToken: string) {
-    const secure = (process.env.AUTH_COOKIE_SECURE ?? 'false') === 'true';
-    const sameSite = (process.env.AUTH_COOKIE_SAMESITE ?? 'lax') as 'lax' | 'strict' | 'none';
+	private cookieName(): string {
+		return process.env.AUTH_COOKIE_NAME ?? 'rt';
+	}
 
-    res.cookie(this.cookieName(), refreshToken, {
-      httpOnly: true,
-      secure,
-      sameSite,
-      // Enterprise hardening: el refresh solo se manda al endpoint de refresh
-      path: '/api/auth/refresh',
-      maxAge: this.refreshTtlDays() * 24 * 60 * 60 * 1000,
-    });
-  }
+	private unauthorized(code: string, message: string, details?: unknown): never {
+		throw new UnauthorizedException({
+			code,
+			message,
+			...(details !== undefined ? { details } : {}),
+		});
+	}
 
-  clearRefreshCookie(res: Response) {
-    const secure = (process.env.AUTH_COOKIE_SECURE ?? 'false') === 'true';
-    const sameSite = (process.env.AUTH_COOKIE_SAMESITE ?? 'lax') as 'lax' | 'strict' | 'none';
-    const name = this.cookieName();
+	setRefreshCookie(res: Response, refreshToken: string) {
+		const secure = (process.env.AUTH_COOKIE_SECURE ?? 'false') === 'true';
+		const sameSite = (process.env.AUTH_COOKIE_SAMESITE ?? 'lax') as
+			| 'lax'
+			| 'strict'
+			| 'none';
 
-    res.clearCookie(name, { httpOnly: true, secure, sameSite, path: '/api/auth/refresh' });
-    res.clearCookie(name, { httpOnly: true, secure, sameSite, path: '/api/auth' });
-    res.clearCookie(name, { httpOnly: true, secure, sameSite, path: '/' });
-  }
+		res.cookie(this.cookieName(), refreshToken, {
+			httpOnly: true,
+			secure,
+			sameSite,
+			path: '/api/auth/refresh',
+			maxAge: this.refreshTtlDays() * 24 * 60 * 60 * 1000,
+		});
+	}
 
-  getRefreshFromCookie(req: Request): string | null {
-    const name = this.cookieName();
-    const v = (req as any).cookies?.[name];
-    return typeof v === 'string' && v.length > 0 ? v : null;
-  }
+	clearRefreshCookie(res: Response) {
+		const secure = (process.env.AUTH_COOKIE_SECURE ?? 'false') === 'true';
+		const sameSite = (process.env.AUTH_COOKIE_SAMESITE ?? 'lax') as
+			| 'lax'
+			| 'strict'
+			| 'none';
+		const name = this.cookieName();
 
-  private signAccessToken(payload: { sub: string; tid: string; role: string; sid: string }) {
-    return this.jwt.sign(payload, {
-      secret: process.env.JWT_ACCESS_SECRET,
-      expiresIn: `${this.accessTtlMin()}m`,
-    });
-  }
+		res.clearCookie(name, {
+			httpOnly: true,
+			secure,
+			sameSite,
+			path: '/api/auth/refresh',
+		});
+		res.clearCookie(name, {
+			httpOnly: true,
+			secure,
+			sameSite,
+			path: '/api/auth',
+		});
+		res.clearCookie(name, {
+			httpOnly: true,
+			secure,
+			sameSite,
+			path: '/',
+		});
+	}
 
-  private signRefreshToken(payload: { sub: string; tid: string; sid: string }) {
-    return this.jwt.sign(payload, {
-      secret: process.env.JWT_REFRESH_SECRET,
-      expiresIn: `${this.refreshTtlDays()}d`,
-    });
-  }
+	getRefreshFromCookie(req: Request): string | null {
+		const name = this.cookieName();
+		const v = (req as any).cookies?.[name];
+		return typeof v === 'string' && v.length > 0 ? v : null;
+	}
 
-  private async revokeAllUserTenantSessions(userId: string, tenantId: string) {
-    await this.prisma.session.updateMany({
-      where: { userId, tenantId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-  }
+	private signAccessToken(payload: {
+		sub: string;
+		tid: string;
+		role: string;
+		sid: string;
+	}) {
+		return this.jwt.sign(payload, {
+			secret: process.env.JWT_ACCESS_SECRET,
+			expiresIn: `${this.accessTtlMin()}m`,
+		});
+	}
 
-  async login(args: LoginArgs) {
-    const user = await this.prisma.user.findUnique({ where: { email: args.email } });
-    if (!user || !user.isActive) throw new UnauthorizedException('Invalid credentials');
+	private signRefreshToken(payload: { sub: string; tid: string; sid: string }) {
+		return this.jwt.sign(payload, {
+			secret: process.env.JWT_REFRESH_SECRET,
+			expiresIn: `${this.refreshTtlDays()}d`,
+		});
+	}
 
-    const ok = await argon2.verify(user.passwordHash, args.password);
-    if (!ok) throw new UnauthorizedException('Invalid credentials');
+	private async revokeAllUserTenantSessions(userId: string, tenantId: string) {
+		await this.prisma.session.updateMany({
+			where: { userId, tenantId, revokedAt: null },
+			data: { revokedAt: new Date() },
+		});
+	}
 
-    const membership = await this.prisma.membership.findUnique({
-      where: { userId_tenantId: { userId: user.id, tenantId: args.tenantId } },
-    });
-    if (!membership) throw new UnauthorizedException('Not a member of this tenant');
+	async login(args: LoginArgs) {
+		const user = await this.prisma.user.findUnique({
+			where: { email: args.email },
+		});
 
-    // Creamos session DB (guardamos HASH del refresh)
-    const sessionId = crypto.randomUUID();
-    const refreshToken = this.signRefreshToken({ sub: user.id, tid: args.tenantId, sid: sessionId });
-    const refreshTokenHash = await argon2.hash(refreshToken);
+		if (!user || !user.isActive) {
+			this.unauthorized('INVALID_CREDENTIALS', 'Invalid credentials');
+		}
 
-    const expiresAt = new Date(Date.now() + this.refreshTtlDays() * 24 * 60 * 60 * 1000);
+		const ok = await argon2.verify(user.passwordHash, args.password);
+		if (!ok) {
+			this.unauthorized('INVALID_CREDENTIALS', 'Invalid credentials');
+		}
 
-    await this.prisma.session.create({
-      data: {
-        id: sessionId,
-        userId: user.id,
-        tenantId: args.tenantId,
-        refreshTokenHash,
-        userAgent: Array.isArray(args.userAgent) ? args.userAgent.join(' ') : args.userAgent,
-        ip: args.ip ?? undefined,
-        expiresAt,
-      },
-    });
-    await this.sessions.markActiveInCache(args.tenantId, sessionId, expiresAt);
+		const membership = await this.prisma.membership.findUnique({
+			where: {
+				userId_tenantId: { userId: user.id, tenantId: args.tenantId },
+			},
+		});
 
-    const accessToken = this.signAccessToken({
-      sub: user.id,
-      tid: args.tenantId,
-      role: membership.role,
-      sid: sessionId,
-    });
+		if (!membership) {
+			this.unauthorized(
+				'TENANT_MEMBERSHIP_REQUIRED',
+				'Not a member of this tenant',
+			);
+		}
 
-    return { accessToken, refreshToken };
-  }
+		const sessionId = crypto.randomUUID();
+		const refreshToken = this.signRefreshToken({
+			sub: user.id,
+			tid: args.tenantId,
+			sid: sessionId,
+		});
+		const refreshTokenHash = await argon2.hash(refreshToken);
 
-  async logout(args: { tenantId: string; refreshToken: string }) {
-    let payload: any;
-    try {
-      payload = this.jwt.verify(args.refreshToken, { secret: process.env.JWT_REFRESH_SECRET });
-    } catch {
-      return; // si está roto, igual limpiamos cookie del lado cliente
-    }
+		const expiresAt = new Date(
+			Date.now() + this.refreshTtlDays() * 24 * 60 * 60 * 1000,
+		);
 
-    if (payload.tid !== args.tenantId) return;
+		await this.prisma.session.create({
+			data: {
+				id: sessionId,
+				userId: user.id,
+				tenantId: args.tenantId,
+				refreshTokenHash,
+				userAgent: Array.isArray(args.userAgent)
+					? args.userAgent.join(' ')
+					: args.userAgent,
+				ip: args.ip ?? undefined,
+				expiresAt,
+			},
+		});
 
-    await this.prisma.session.updateMany({
-      where: { id: payload.sid, tenantId: args.tenantId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
+		await this.sessions.markActiveInCache(args.tenantId, sessionId, expiresAt);
 
-    // ✅ cortar access inmediatamente si esa sid estaba cacheada
-    await this.sessions.clearCache(args.tenantId, payload.sid);
-  }
+		const accessToken = this.signAccessToken({
+			sub: user.id,
+			tid: args.tenantId,
+			role: membership.role,
+			sid: sessionId,
+		});
 
-  async logoutBySid(args: { tenantId: string; sid: string }) {
-    await this.prisma.session.updateMany({
-      where: { id: args.sid, tenantId: args.tenantId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-    await this.sessions.clearCache(args.tenantId, args.sid);
-  }
+		return { accessToken, refreshToken };
+	}
 
-  async logoutByAccessBestEffort(args: { tenantId: string; authorization: string }) {
-    const token = args.authorization.startsWith('Bearer ')
-      ? args.authorization.slice('Bearer '.length)
-      : args.authorization;
+	async logout(args: { tenantId: string; refreshToken: string }) {
+		let payload: any;
 
-    try {
-      const payload: any = this.jwt.verify(token, {
-        secret: process.env.JWT_ACCESS_SECRET,
-        ignoreExpiration: true, // ✅ clave
-      });
+		try {
+			payload = this.jwt.verify(args.refreshToken, {
+				secret: process.env.JWT_REFRESH_SECRET,
+			});
+		} catch {
+			return;
+		}
 
-      if (!payload?.sid) return;
-      if (payload?.tid !== args.tenantId) return;
+		if (payload.tid !== args.tenantId) return;
 
-      await this.logoutBySid({ tenantId: args.tenantId, sid: payload.sid });
-    } catch {
-      // best effort: no hacemos nada
-    }
-  }
+		await this.prisma.session.updateMany({
+			where: { id: payload.sid, tenantId: args.tenantId, revokedAt: null },
+			data: { revokedAt: new Date() },
+		});
 
-  async refresh(args: RefreshArgs) {
-    let payload: any;
-    try {
-      payload = this.jwt.verify(args.refreshToken, { secret: process.env.JWT_REFRESH_SECRET });
-    } catch {
-      throw new UnauthorizedException('Invalid refresh token');
-    }
+		await this.sessions.clearCache(args.tenantId, payload.sid);
+	}
 
-    // Validamos tenant
-    if (payload.tid !== args.tenantId) throw new UnauthorizedException('Invalid refresh token');
+	async logoutBySid(args: { tenantId: string; sid: string }) {
+		await this.prisma.session.updateMany({
+			where: { id: args.sid, tenantId: args.tenantId, revokedAt: null },
+			data: { revokedAt: new Date() },
+		});
 
-    // Buscamos session
-    const session = await this.prisma.session.findUnique({ where: { id: payload.sid } });
-    if (!session) throw new UnauthorizedException('Session not found');
-    if (session.revokedAt) throw new UnauthorizedException('Invalid refresh token');
-    if (session.expiresAt.getTime() < Date.now()) throw new UnauthorizedException('Invalid refresh token');
+		await this.sessions.clearCache(args.tenantId, args.sid);
+	}
 
-    // ✅ Hardening: sid/sub/tid consistentes
-    if (session.tenantId !== args.tenantId) throw new UnauthorizedException('Invalid refresh token');
-    if (session.userId !== payload.sub) throw new UnauthorizedException('Invalid refresh token');
+	async logoutByAccessBestEffort(args: {
+		tenantId: string;
+		authorization: string;
+	}) {
+		const token = args.authorization.startsWith('Bearer ')
+			? args.authorization.slice('Bearer '.length)
+			: args.authorization;
 
-    // Verificamos hash coincide
-    const ok = await argon2.verify(session.refreshTokenHash, args.refreshToken);
-    if (!ok) {
-      // ✅ Enterprise: hash mismatch para sid existente => sospecha fuerte → revocar todo
-      await this.revokeAllUserTenantSessions(session.userId, args.tenantId);
-      throw new UnauthorizedException('Invalid refresh token');
-    }
+		try {
+			const payload: any = this.jwt.verify(token, {
+				secret: process.env.JWT_ACCESS_SECRET,
+				ignoreExpiration: true,
+			});
 
-    // membership actual (role puede cambiar)
-    const membership = await this.prisma.membership.findUnique({
-      where: { userId_tenantId: { userId: session.userId, tenantId: args.tenantId } },
-    });
-    if (!membership) {
-      // si ya no es miembro, revocá sesiones de ese tenant también
-      await this.revokeAllUserTenantSessions(session.userId, args.tenantId);
-      throw new UnauthorizedException('Not a member of this tenant');
-    }
+			if (!payload?.sid) return;
+			if (payload?.tid !== args.tenantId) return;
 
-    const now = new Date();
+			await this.logoutBySid({ tenantId: args.tenantId, sid: payload.sid });
+		} catch {
+			return;
+		}
+	}
 
-    // ✅ Rotación atómica (evita double refresh / dup sessions)
-    const { newRefreshToken, newSessionId } = await this.prisma.$transaction(async (tx) => {
-      // compare-and-set: revocá SOLO si sigue activa
-      const updated = await tx.session.updateMany({
-        where: { id: session.id, revokedAt: null },
-        data: { revokedAt: now },
-      });
+	async refresh(args: RefreshArgs) {
+		let payload: any;
 
-      if (updated.count !== 1) {
-        // Token ya usado en otra request (replay/race)
-        // Revocación agresiva: todas las sesiones del user+tenant
-        await this.revokeAllUserTenantSessions(session.userId, args.tenantId);
-        throw new UnauthorizedException('Invalid refresh token');
-      }
+		try {
+			payload = this.jwt.verify(args.refreshToken, {
+				secret: process.env.JWT_REFRESH_SECRET,
+			});
+		} catch {
+			this.unauthorized('INVALID_REFRESH_TOKEN', 'Invalid refresh token');
+		}
 
-      const newSessionId = crypto.randomUUID();
-      const newRefreshToken = this.signRefreshToken({
-        sub: session.userId,
-        tid: args.tenantId,
-        sid: newSessionId,
-      });
+		if (payload.tid !== args.tenantId) {
+			this.unauthorized('INVALID_REFRESH_TOKEN', 'Invalid refresh token');
+		}
 
-      const newRefreshTokenHash = await argon2.hash(newRefreshToken);
-      const expiresAt = new Date(Date.now() + this.refreshTtlDays() * 24 * 60 * 60 * 1000);
+		const session = await this.prisma.session.findUnique({
+			where: { id: payload.sid },
+		});
 
-      await tx.session.create({
-        data: {
-          id: newSessionId,
-          userId: session.userId,
-          tenantId: args.tenantId,
-          refreshTokenHash: newRefreshTokenHash,
-          userAgent: Array.isArray(args.userAgent) ? args.userAgent.join(' ') : args.userAgent,
-          ip: args.ip ?? undefined,
-          expiresAt,
-          rotatedFromId: session.id,
-        },
-      });
+		if (!session) {
+			this.unauthorized('SESSION_NOT_FOUND', 'Session not found');
+		}
 
-      return { newRefreshToken, newSessionId };
-    });
+		if (session.revokedAt) {
+			this.unauthorized('INVALID_REFRESH_TOKEN', 'Invalid refresh token');
+		}
 
-    // cache warm de la nueva sid
-    await this.sessions.markActiveInCache(args.tenantId, newSessionId, new Date(Date.now() + this.refreshTtlDays() * 24 * 60 * 60 * 1000));
+		if (session.expiresAt.getTime() < Date.now()) {
+			this.unauthorized('INVALID_REFRESH_TOKEN', 'Invalid refresh token');
+		}
 
-    // y cache kill opcional de la vieja sid (por si alguna vez estuvo cacheada)
-    await this.sessions.clearCache(args.tenantId, session.id);
+		if (session.tenantId !== args.tenantId) {
+			this.unauthorized('INVALID_REFRESH_TOKEN', 'Invalid refresh token');
+		}
 
-    // ✅ Access token lleva sid (session activa actual)
-    const accessToken = this.signAccessToken({
-      sub: session.userId,
-      tid: args.tenantId,
-      role: membership.role,
-      sid: newSessionId,
-    });
+		if (session.userId !== payload.sub) {
+			this.unauthorized('INVALID_REFRESH_TOKEN', 'Invalid refresh token');
+		}
 
-    return { accessToken, newRefreshToken };
-  }
+		const ok = await argon2.verify(session.refreshTokenHash, args.refreshToken);
+		if (!ok) {
+			await this.revokeAllUserTenantSessions(session.userId, args.tenantId);
+			this.unauthorized('INVALID_REFRESH_TOKEN', 'Invalid refresh token');
+		}
 
-  async logoutAll(args: { tenantId: string; userId: string }) {
-    await this.prisma.session.updateMany({
-      where: { tenantId: args.tenantId, userId: args.userId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
-  }
+		const membership = await this.prisma.membership.findUnique({
+			where: {
+				userId_tenantId: { userId: session.userId, tenantId: args.tenantId },
+			},
+		});
 
-  async me(args: { tenantId: string; userId: string }) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: args.userId },
-      select: { id: true, email: true, emailVerified: true, isActive: true, createdAt: true },
-    });
+		if (!membership) {
+			await this.revokeAllUserTenantSessions(session.userId, args.tenantId);
+			this.unauthorized(
+				'TENANT_MEMBERSHIP_REQUIRED',
+				'Not a member of this tenant',
+			);
+		}
 
-    const membership = await this.prisma.membership.findUnique({
-      where: { userId_tenantId: { userId: args.userId, tenantId: args.tenantId } },
-      select: { role: true, tenantId: true, createdAt: true },
-    });
+		const now = new Date();
 
-    return { user, membership };
-  }
+		const { newRefreshToken, newSessionId } = await this.prisma.$transaction(
+			async (tx) => {
+				const updated = await tx.session.updateMany({
+					where: { id: session.id, revokedAt: null },
+					data: { revokedAt: now },
+				});
+
+				if (updated.count !== 1) {
+					await this.revokeAllUserTenantSessions(session.userId, args.tenantId);
+					this.unauthorized('INVALID_REFRESH_TOKEN', 'Invalid refresh token');
+				}
+
+				const newSessionId = crypto.randomUUID();
+				const newRefreshToken = this.signRefreshToken({
+					sub: session.userId,
+					tid: args.tenantId,
+					sid: newSessionId,
+				});
+
+				const newRefreshTokenHash = await argon2.hash(newRefreshToken);
+				const expiresAt = new Date(
+					Date.now() + this.refreshTtlDays() * 24 * 60 * 60 * 1000,
+				);
+
+				await tx.session.create({
+					data: {
+						id: newSessionId,
+						userId: session.userId,
+						tenantId: args.tenantId,
+						refreshTokenHash: newRefreshTokenHash,
+						userAgent: Array.isArray(args.userAgent)
+							? args.userAgent.join(' ')
+							: args.userAgent,
+						ip: args.ip ?? undefined,
+						expiresAt,
+						rotatedFromId: session.id,
+					},
+				});
+
+				return { newRefreshToken, newSessionId };
+			},
+		);
+
+		await this.sessions.markActiveInCache(
+			args.tenantId,
+			newSessionId,
+			new Date(Date.now() + this.refreshTtlDays() * 24 * 60 * 60 * 1000),
+		);
+
+		await this.sessions.clearCache(args.tenantId, session.id);
+
+		const accessToken = this.signAccessToken({
+			sub: session.userId,
+			tid: args.tenantId,
+			role: membership.role,
+			sid: newSessionId,
+		});
+
+		return { accessToken, newRefreshToken };
+	}
+
+	async logoutAll(args: { tenantId: string; userId: string }) {
+		await this.prisma.session.updateMany({
+			where: {
+				tenantId: args.tenantId,
+				userId: args.userId,
+				revokedAt: null,
+			},
+			data: { revokedAt: new Date() },
+		});
+	}
+
+	async me(args: { tenantId: string; userId: string }) {
+		const user = await this.prisma.user.findUnique({
+			where: { id: args.userId },
+			select: {
+				id: true,
+				email: true,
+				emailVerified: true,
+				isActive: true,
+				createdAt: true,
+			},
+		});
+
+		const membership = await this.prisma.membership.findUnique({
+			where: {
+				userId_tenantId: { userId: args.userId, tenantId: args.tenantId },
+			},
+			select: { role: true, tenantId: true, createdAt: true },
+		});
+
+		return { user, membership };
+	}
 }

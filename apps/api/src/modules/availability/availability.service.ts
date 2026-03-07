@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { AvailabilityEngine } from '../../domain/availability/availability.engine';
@@ -23,14 +23,30 @@ export class AvailabilityService {
   }): Promise<GetAvailabilityResponse> {
     const { tenantId, locationId, resourceId, serviceId, date } = args;
 
-    const location = await this.prisma.location.findFirstOrThrow({
+    const location = await this.prisma.location.findFirst({
       where: { tenantId, id: locationId },
       select: { timeZone: true },
     });
 
+    if (!location) {
+      throw new NotFoundException({
+        code: 'LOCATION_NOT_FOUND',
+        message: 'Location not found',
+      });
+    }
+
     const tz = location.timeZone;
 
-    const r = buildLocalDayRange({ dateISO: date, tz });
+    let r;
+    try {
+      r = buildLocalDayRange({ dateISO: date, tz });
+    } catch {
+      throw new BadRequestException({
+        code: 'INVALID_DATE',
+        message: 'Invalid date',
+        details: { date },
+      });
+    }
 
     const from = r.fromUtc;
     const to = r.toUtc;
@@ -76,12 +92,22 @@ export class AvailabilityService {
         select: { startsAt: true, endsAt: true },
       }),
 
-      this.prisma.service.findFirstOrThrow({
+      this.prisma.service.findFirst({
         where: { tenantId, id: serviceId, locationId },
-        select: { durationMinutes: true, bufferBeforeMinutes: true, bufferAfterMinutes: true },
+        select: {
+          durationMinutes: true,
+          bufferBeforeMinutes: true,
+          bufferAfterMinutes: true,
+        },
       }),
     ]);
 
+    if (!svc) {
+      throw new NotFoundException({
+        code: 'SERVICE_NOT_FOUND',
+        message: 'Service not found',
+      });
+    }
     const stepMinutes = svc.durationMinutes; // o 15 si querés granularidad fija
 
     const input = {

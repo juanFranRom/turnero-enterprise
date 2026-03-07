@@ -65,5 +65,5 @@ export type AppointmentsHistoryGlobalItemDto = {
 
 export type GetAppointmentsHistoryGlobalResponseDto = {
   items: AppointmentsHistoryGlobalItemDto[];
-  nextCursor?: string;
+  nextCursor?: string | null;
 };

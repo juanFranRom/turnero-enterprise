@@ -52,6 +52,6 @@ export class ServicesController {
   @Delete(':id')
   async remove(@Tenant() tenant: TenantCtx | null, @Param('id') id: string) {
     if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.services.softDelete(tenant.id, id);
+    return this.services.delete(tenant.id, id);
   }
 }

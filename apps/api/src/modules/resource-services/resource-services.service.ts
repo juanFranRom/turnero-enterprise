@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CreateResourceServiceDto } from './dtos/create-resource-service.dto';
 import { OwnerCrudMetrics } from '../../common/metrics';
+import { toCursorListResponse } from '../../common/pagination/list-with-cursor';
 
 @Injectable()
 export class ResourceServicesService {
@@ -33,6 +34,62 @@ export class ResourceServicesService {
 		return link;
 	}
 
+	private async findResourceOrThrow(
+		tenantId: string,
+		resourceId: string,
+		action: 'create' | 'list',
+		select: Record<string, unknown> = { id: true },
+	) {
+		const resource = await this.prisma.resource.findFirst({
+			where: { id: resourceId, tenantId },
+			select,
+		});
+
+		if (!resource) {
+			this.ownerCrudMetrics.validationError({
+				entity: this.metricEntity,
+				action,
+				code: 'RESOURCE_NOT_FOUND',
+				tenant: tenantId,
+			});
+
+			throw new NotFoundException({
+				code: 'RESOURCE_NOT_FOUND',
+				message: 'Resource not found',
+			});
+		}
+
+		return resource;
+	}
+
+	private async findServiceOrThrow(
+		tenantId: string,
+		serviceId: string,
+		action: 'create' | 'list',
+		select: Record<string, unknown> = { id: true },
+	) {
+		const service = await this.prisma.service.findFirst({
+			where: { id: serviceId, tenantId },
+			select,
+		});
+
+		if (!service) {
+			this.ownerCrudMetrics.validationError({
+				entity: this.metricEntity,
+				action,
+				code: 'SERVICE_NOT_FOUND',
+				tenant: tenantId,
+			});
+
+			throw new NotFoundException({
+				code: 'SERVICE_NOT_FOUND',
+				message: 'Service not found',
+			});
+		}
+
+		return service;
+	}
+
 	async link(tenantId: string, dto: CreateResourceServiceDto) {
 		return this.ownerCrudMetrics.track({
 			entity: this.metricEntity,
@@ -40,43 +97,15 @@ export class ResourceServicesService {
 			tenant: tenantId,
 			run: async () => {
 				const [resource, service] = await Promise.all([
-					this.prisma.resource.findFirst({
-						where: { id: dto.resourceId, tenantId },
-						select: { id: true, locationId: true },
+					this.findResourceOrThrow(tenantId, dto.resourceId, 'create', {
+						id: true,
+						locationId: true,
 					}),
-					this.prisma.service.findFirst({
-						where: { id: dto.serviceId, tenantId },
-						select: { id: true, locationId: true },
+					this.findServiceOrThrow(tenantId, dto.serviceId, 'create', {
+						id: true,
+						locationId: true,
 					}),
 				]);
-
-				if (!resource) {
-					this.ownerCrudMetrics.validationError({
-						entity: this.metricEntity,
-						action: 'create',
-						code: 'RESOURCE_NOT_FOUND',
-						tenant: tenantId,
-					});
-
-					throw new NotFoundException({
-						code: 'RESOURCE_NOT_FOUND',
-						message: 'Resource not found',
-					});
-				}
-
-				if (!service) {
-					this.ownerCrudMetrics.validationError({
-						entity: this.metricEntity,
-						action: 'create',
-						code: 'SERVICE_NOT_FOUND',
-						tenant: tenantId,
-					});
-
-					throw new NotFoundException({
-						code: 'SERVICE_NOT_FOUND',
-						message: 'Service not found',
-					});
-				}
 
 				if (resource.locationId !== service.locationId) {
 					this.ownerCrudMetrics.validationError({
@@ -125,7 +154,7 @@ export class ResourceServicesService {
 		});
 	}
 
-	async unlinkById(tenantId: string, id: string) {
+	async unlink(tenantId: string, id: string) {
 		return this.ownerCrudMetrics.track({
 			entity: this.metricEntity,
 			action: 'delete',
@@ -137,7 +166,7 @@ export class ResourceServicesService {
 					where: { id: link.id },
 				});
 
-				return { ok: true };
+				return { success: true };
 			},
 		});
 	}
@@ -148,24 +177,7 @@ export class ResourceServicesService {
 			action: 'list',
 			tenant: tenantId,
 			run: async () => {
-				const resource = await this.prisma.resource.findFirst({
-					where: { id: resourceId, tenantId },
-					select: { id: true },
-				});
-
-				if (!resource) {
-					this.ownerCrudMetrics.validationError({
-						entity: this.metricEntity,
-						action: 'list',
-						code: 'RESOURCE_NOT_FOUND',
-						tenant: tenantId,
-					});
-
-					throw new NotFoundException({
-						code: 'RESOURCE_NOT_FOUND',
-						message: 'Resource not found',
-					});
-				}
+				await this.findResourceOrThrow(tenantId, resourceId, 'list');
 
 				const links = await this.prisma.resourceService.findMany({
 					where: { tenantId, resourceId },
@@ -173,11 +185,14 @@ export class ResourceServicesService {
 					include: { service: true },
 				});
 
-				return links.map((l) => ({
-					linkId: l.id,
-					service: l.service,
-					linkedAt: l.createdAt,
-				}));
+				return toCursorListResponse({
+					items: links.map((l) => ({
+						linkId: l.id,
+						service: l.service,
+						linkedAt: l.createdAt,
+					})),
+					nextCursor: null,
+				});
 			},
 		});
 	}
@@ -188,24 +203,7 @@ export class ResourceServicesService {
 			action: 'list',
 			tenant: tenantId,
 			run: async () => {
-				const service = await this.prisma.service.findFirst({
-					where: { id: serviceId, tenantId },
-					select: { id: true },
-				});
-
-				if (!service) {
-					this.ownerCrudMetrics.validationError({
-						entity: this.metricEntity,
-						action: 'list',
-						code: 'SERVICE_NOT_FOUND',
-						tenant: tenantId,
-					});
-
-					throw new NotFoundException({
-						code: 'SERVICE_NOT_FOUND',
-						message: 'Service not found',
-					});
-				}
+				await this.findServiceOrThrow(tenantId, serviceId, 'list');
 
 				const links = await this.prisma.resourceService.findMany({
 					where: { tenantId, serviceId },
@@ -213,11 +211,14 @@ export class ResourceServicesService {
 					include: { resource: true },
 				});
 
-				return links.map((l) => ({
-					linkId: l.id,
-					resource: l.resource,
-					linkedAt: l.createdAt,
-				}));
+				return toCursorListResponse({
+					items: links.map((l) => ({
+						linkId: l.id,
+						resource: l.resource,
+						linkedAt: l.createdAt,
+					})),
+					nextCursor: null,
+				});
 			},
 		});
 	}

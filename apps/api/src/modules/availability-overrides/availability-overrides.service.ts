@@ -12,7 +12,7 @@ import {
 	assertIntervalValid,
 	parseOptionalDate,
 } from '../../common/calendar';
-import { listWithCreatedAtCursor } from '../../common/pagination/list-with-cursor';
+import { listWithCreatedAtCursor, toCursorListResponse } from '../../common/pagination/list-with-cursor';
 import { OwnerCrudMetrics } from '../../common/metrics';
 
 function omitUndefined<T extends Record<string, unknown>>(obj: T): T {
@@ -200,10 +200,7 @@ export class AvailabilityOverridesService {
 					maxLimit: 100,
 				});
 
-				return {
-					data: result.items,
-					nextCursor: result.nextCursor,
-				};
+				return toCursorListResponse(result);
 			},
 		});
 	}
@@ -214,31 +211,32 @@ export class AvailabilityOverridesService {
 			action: 'get',
 			tenant: tenantId,
 			run: async () => {
-				const item = await this.prisma.availabilityOverride.findFirst({
-					where: {
-						id,
-						tenantId,
-					},
-				});
-
-				if (!item) {
-					this.ownerCrudMetrics.validationError({
-						entity: this.metricEntity,
-						action: 'get',
-						code: 'AVAILABILITY_OVERRIDE_NOT_FOUND',
-						tenant: tenantId,
-					});
-
-					throw new NotFoundException({
-						code: 'AVAILABILITY_OVERRIDE_NOT_FOUND',
-						message: 'Availability override not found',
-					});
-				}
+				const item = await this.findByIdOrThrow(tenantId, id);
 
 				return item;
 			},
 		});
 	}
+
+    private async findByIdOrThrow(
+        tenantId: string,
+        id: string,
+        select?: Record<string, unknown>,
+    ) {
+        const item = await this.prisma.availabilityOverride.findFirst({
+            where: { id, tenantId },
+            ...(select ? { select } : {}),
+        });
+
+        if (!item) {
+            throw new NotFoundException({
+                code: 'AVAILABILITY_OVERRIDE_NOT_FOUND',
+                message: 'Availability override not found',
+            });
+        }
+
+        return item;
+    }
 
 	async update(
 		tenantId: string,
@@ -250,36 +248,16 @@ export class AvailabilityOverridesService {
 			action: 'update',
 			tenant: tenantId,
 			run: async () => {
-				const existing = await this.prisma.availabilityOverride.findFirst({
-					where: {
-						id,
-						tenantId,
-					},
-					select: {
-						id: true,
-						tenantId: true,
-						locationId: true,
-						resourceId: true,
-						kind: true,
-						startsAt: true,
-						endsAt: true,
-						reason: true,
-					},
-				});
-
-				if (!existing) {
-					this.ownerCrudMetrics.validationError({
-						entity: this.metricEntity,
-						action: 'update',
-						code: 'AVAILABILITY_OVERRIDE_NOT_FOUND',
-						tenant: tenantId,
-					});
-
-					throw new NotFoundException({
-						code: 'AVAILABILITY_OVERRIDE_NOT_FOUND',
-						message: 'Availability override not found',
-					});
-				}
+				const existing = await this.findByIdOrThrow(tenantId, id, {
+                    id: true,
+                    tenantId: true,
+                    locationId: true,
+                    resourceId: true,
+                    kind: true,
+                    startsAt: true,
+                    endsAt: true,
+                    reason: true,
+                });
 
 				const startsAt = dto.startsAt
 					? this.parseRequiredDate(dto.startsAt, tenantId, 'update')
@@ -322,35 +300,15 @@ export class AvailabilityOverridesService {
 		});
 	}
 
-	async remove(tenantId: string, id: string) {
+	async delete(tenantId: string, id: string) {
 		return this.ownerCrudMetrics.track({
 			entity: this.metricEntity,
 			action: 'delete',
 			tenant: tenantId,
 			run: async () => {
-				const existing = await this.prisma.availabilityOverride.findFirst({
-					where: {
-						id,
-						tenantId,
-					},
-					select: {
-						id: true,
-					},
-				});
-
-				if (!existing) {
-					this.ownerCrudMetrics.validationError({
-						entity: this.metricEntity,
-						action: 'delete',
-						code: 'AVAILABILITY_OVERRIDE_NOT_FOUND',
-						tenant: tenantId,
-					});
-
-					throw new NotFoundException({
-						code: 'AVAILABILITY_OVERRIDE_NOT_FOUND',
-						message: 'Availability override not found',
-					});
-				}
+				const existing = await this.findByIdOrThrow(tenantId, id, {
+                    id: true,
+                });
 
 				await this.prisma.availabilityOverride.delete({
 					where: { id: existing.id },
@@ -480,10 +438,9 @@ export class AvailabilityOverridesService {
 		const metaTarget = error?.meta?.target;
 
 		if (
-			error?.code === 'P2004' ||
-			message.includes('availability_override_no_overlap') ||
-			message.includes('AvailabilityOverride') ||
-			String(metaTarget ?? '').includes('availability_override_no_overlap')
+            error?.code === 'P2004' ||
+            message.includes('availability_override_no_overlap') ||
+            String(metaTarget ?? '').includes('availability_override_no_overlap')
 		) {
 			this.ownerCrudMetrics.conflictError({
 				entity: this.metricEntity,

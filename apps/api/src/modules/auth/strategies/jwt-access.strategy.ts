@@ -21,7 +21,10 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy, 'jwt-access') 
     const tenant = (req as any).tenant;
 
     if (tenant?.id && payload?.tid && tenant.id !== payload.tid) {
-      throw new UnauthorizedException('Invalid tenant');
+      throw new UnauthorizedException({
+        code: 'INVALID_TENANT',
+        message: 'Invalid tenant',
+      });
     }
 
     // ✅ ESTO corta el bug: si hiciste logout y esa sid quedó revocada => 401

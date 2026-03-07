@@ -13,6 +13,7 @@ import { hhmmToDbTime } from '../../common/calendar/time-of-day';
 import { parseOptionalDate } from '../../common/calendar/dates';
 import { assertIntervalValid } from '../../common/calendar/intervals';
 import { OwnerCrudMetrics } from '../../common/metrics';
+import { toCursorListResponse } from '../../common/pagination/list-with-cursor';
 
 @Injectable()
 export class WeeklySchedulesService {
@@ -22,6 +23,24 @@ export class WeeklySchedulesService {
 		private readonly prisma: PrismaService,
 		private readonly ownerCrudMetrics: OwnerCrudMetrics,
 	) {}
+
+	private async getByIdOrThrow(
+		tenantId: string,
+		id: string,
+	): Promise<WeeklySchedule> {
+		const row = await this.prisma.weeklySchedule.findFirst({
+			where: { id, tenantId },
+		});
+
+		if (!row) {
+			throw new NotFoundException({
+				code: 'WEEKLY_SCHEDULE_NOT_FOUND',
+				message: 'Weekly schedule not found',
+			});
+		}
+
+		return row;
+	}
 
 	private async assertLocationResourceSameTenant(
 		tenantId: string,
@@ -128,7 +147,10 @@ export class WeeklySchedulesService {
 		}
 	}
 
-	async create(tenantId: string, dto: CreateWeeklyScheduleDto): Promise<WeeklySchedule> {
+	async create(
+		tenantId: string,
+		dto: CreateWeeklyScheduleDto,
+	): Promise<WeeklySchedule> {
 		return this.ownerCrudMetrics.track({
 			entity: this.metricEntity,
 			action: 'create',
@@ -203,9 +225,14 @@ export class WeeklySchedulesService {
 					...(q.dayOfWeek ? { dayOfWeek: q.dayOfWeek } : {}),
 				};
 
-				return this.prisma.weeklySchedule.findMany({
+				const items = await this.prisma.weeklySchedule.findMany({
 					where,
 					orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
+				});
+
+				return toCursorListResponse({
+					items,
+					nextCursor: null,
 				});
 			},
 		});
@@ -217,11 +244,9 @@ export class WeeklySchedulesService {
 			action: 'get',
 			tenant: tenantId,
 			run: async () => {
-				const row = await this.prisma.weeklySchedule.findFirst({
-					where: { id, tenantId },
-				});
-
-				if (!row) {
+				try {
+					return await this.getByIdOrThrow(tenantId, id);
+				} catch (e) {
 					this.ownerCrudMetrics.validationError({
 						entity: this.metricEntity,
 						action: 'get',
@@ -229,13 +254,8 @@ export class WeeklySchedulesService {
 						tenant: tenantId,
 					});
 
-					throw new NotFoundException({
-						code: 'WEEKLY_SCHEDULE_NOT_FOUND',
-						message: 'Weekly schedule not found',
-					});
+					throw e;
 				}
-
-				return row;
 			},
 		});
 	}
@@ -246,7 +266,7 @@ export class WeeklySchedulesService {
 			action: 'update',
 			tenant: tenantId,
 			run: async () => {
-				const existing = await this.getById(tenantId, id);
+				const existing = await this.getByIdOrThrow(tenantId, id);
 
 				const locationId = dto.locationId ?? existing.locationId;
 				const resourceId = dto.resourceId ?? existing.resourceId;
@@ -279,7 +299,7 @@ export class WeeklySchedulesService {
 
 				try {
 					return await this.prisma.weeklySchedule.update({
-						where: { id },
+						where: { id: existing.id },
 						data: {
 							locationId,
 							resourceId,
@@ -313,15 +333,19 @@ export class WeeklySchedulesService {
 		});
 	}
 
-	async remove(tenantId: string, id: string) {
+	async delete(tenantId: string, id: string) {
 		return this.ownerCrudMetrics.track({
 			entity: this.metricEntity,
 			action: 'delete',
 			tenant: tenantId,
 			run: async () => {
-				await this.getById(tenantId, id);
-				await this.prisma.weeklySchedule.delete({ where: { id } });
-				return { ok: true };
+				const existing = await this.getByIdOrThrow(tenantId, id);
+
+				await this.prisma.weeklySchedule.delete({
+					where: { id: existing.id },
+				});
+
+				return { success: true };
 			},
 		});
 	}

@@ -30,7 +30,7 @@ export class ResourceServicesController {
   @Delete('resource-services/:id')
   async unlink(@Tenant() tenant: TenantCtx | null, @Param('id') id: string) {
     if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.resourceServices.unlinkById(tenant.id, id);
+    return this.resourceServices.unlink(tenant.id, id);
   }
 
   @Get('resources/:resourceId/services')

@@ -10,14 +10,27 @@ export class TenantMembershipGuard implements CanActivate {
     const tenant = req.tenant;
     const user = req.auth;
 
-    if (!tenant?.id) throw new UnauthorizedException('Missing tenant');
-    if (!user?.userId) throw new UnauthorizedException('Missing user');
+    if (!tenant?.id) 
+      throw new UnauthorizedException({
+        code: 'TENANT_REQUIRED',
+        message: 'Missing tenant',
+      });
+
+    if (!user?.userId) 
+      throw new UnauthorizedException({
+        code: 'USER_REQUIRED',
+        message: 'Missing user',
+      });
 
     const membership = await this.prisma.membership.findUnique({
       where: { userId_tenantId: { userId: user.userId, tenantId: tenant.id } },
     });
 
-    if (!membership) throw new UnauthorizedException('User not a member of this tenant');
+    if (!membership) 
+      throw new UnauthorizedException({
+        code: 'TENANT_MEMBERSHIP_REQUIRED',
+        message: 'User not a member of this tenant',
+      });
 
     req.membership = membership;
     return true;

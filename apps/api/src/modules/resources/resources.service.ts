@@ -8,7 +8,10 @@ import { CreateResourceDto } from './dtos/create-resource.dto';
 import { UpdateResourceDto } from './dtos/update-resource.dto';
 import { ListResourcesQuery } from './dtos/list-resources.query';
 import { Prisma, type Resource } from '@prisma/client';
-import { listWithCreatedAtCursor } from '../../common/pagination/list-with-cursor';
+import {
+	listWithCreatedAtCursor,
+	toCursorListResponse,
+} from '../../common/pagination/list-with-cursor';
 import { OwnerCrudMetrics } from '../../common/metrics';
 
 type ResourcesCursorScope = {
@@ -28,7 +31,23 @@ export class ResourcesService {
 		private readonly ownerCrudMetrics: OwnerCrudMetrics,
 	) {}
 
-	private async getByIdOrThrow(tenantId: string, id: string) {
+	private async findLocationOrThrow(tenantId: string, locationId: string) {
+		const location = await this.prisma.location.findFirst({
+			where: { id: locationId, tenantId },
+			select: { id: true },
+		});
+
+		if (!location) {
+			throw new NotFoundException({
+				code: 'LOCATION_NOT_FOUND',
+				message: 'Location not found',
+			});
+		}
+
+		return location;
+	}
+
+	private async getByIdOrThrow(tenantId: string, id: string): Promise<Resource> {
 		const resource = await this.prisma.resource.findFirst({
 			where: { id, tenantId },
 		});
@@ -36,6 +55,7 @@ export class ResourcesService {
 		if (!resource) {
 			throw new NotFoundException({
 				code: 'RESOURCE_NOT_FOUND',
+				message: 'Resource not found',
 			});
 		}
 
@@ -48,23 +68,7 @@ export class ResourcesService {
 			action: 'create',
 			tenant: tenantId,
 			run: async () => {
-				const location = await this.prisma.location.findFirst({
-					where: { id: dto.locationId, tenantId },
-					select: { id: true },
-				});
-
-				if (!location) {
-					this.ownerCrudMetrics.validationError({
-						entity: this.metricEntity,
-						action: 'create',
-						code: 'LOCATION_NOT_FOUND',
-						tenant: tenantId,
-					});
-
-					throw new NotFoundException({
-						code: 'LOCATION_NOT_FOUND',
-					});
-				}
+				await this.findLocationOrThrow(tenantId, dto.locationId);
 
 				try {
 					return await this.prisma.resource.create({
@@ -86,6 +90,7 @@ export class ResourcesService {
 
 						throw new ConflictException({
 							code: 'RESOURCE_NAME_TAKEN',
+							message: 'Resource name already exists',
 						});
 					}
 
@@ -108,7 +113,10 @@ export class ResourcesService {
 					...(q.isActive === undefined ? {} : { isActive: q.isActive }),
 				};
 
-				return listWithCreatedAtCursor<Resource, ResourcesCursorScope>({
+				const result = await listWithCreatedAtCursor<
+					Resource,
+					ResourcesCursorScope
+				>({
 					tenantId,
 					query: q,
 					scope: {
@@ -121,6 +129,8 @@ export class ResourcesService {
 					whereBase,
 					delegate: this.prisma.resource,
 				});
+
+				return toCursorListResponse(result);
 			},
 		});
 	}
@@ -131,11 +141,9 @@ export class ResourcesService {
 			action: 'get',
 			tenant: tenantId,
 			run: async () => {
-				const resource = await this.prisma.resource.findFirst({
-					where: { id, tenantId },
-				});
-
-				if (!resource) {
+				try {
+					return await this.getByIdOrThrow(tenantId, id);
+				} catch (e) {
 					this.ownerCrudMetrics.validationError({
 						entity: this.metricEntity,
 						action: 'get',
@@ -143,12 +151,8 @@ export class ResourcesService {
 						tenant: tenantId,
 					});
 
-					throw new NotFoundException({
-						code: 'RESOURCE_NOT_FOUND',
-					});
+					throw e;
 				}
-
-				return resource;
 			},
 		});
 	}
@@ -177,6 +181,7 @@ export class ResourcesService {
 
 						throw new ConflictException({
 							code: 'RESOURCE_NAME_TAKEN',
+							message: 'Resource name already exists',
 						});
 					}
 
@@ -186,7 +191,7 @@ export class ResourcesService {
 		});
 	}
 
-	async softDelete(tenantId: string, id: string) {
+	async delete(tenantId: string, id: string) {
 		return this.ownerCrudMetrics.track({
 			entity: this.metricEntity,
 			action: 'delete',
@@ -194,10 +199,12 @@ export class ResourcesService {
 			run: async () => {
 				const existing = await this.getByIdOrThrow(tenantId, id);
 
-				return this.prisma.resource.update({
+				await this.prisma.resource.update({
 					where: { id: existing.id },
 					data: { isActive: false },
 				});
+
+				return { success: true };
 			},
 		});
 	}

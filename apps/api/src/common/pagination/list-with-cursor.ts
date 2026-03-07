@@ -151,3 +151,13 @@ export async function listWithCreatedAtCursor<
 
   return { items, nextCursor };
 }
+
+export function toCursorListResponse<T>(result: {
+	items: T[];
+	nextCursor: string | null;
+}) {
+	return {
+		data: result.items,
+		nextCursor: result.nextCursor,
+	};
+}

@@ -76,7 +76,7 @@ export class AvailabilityOverridesController {
     @Tenant() tenant: TenantCtx | null,
     @Param('id') id: string,
   ) {
-    return this.availabilityOverridesService.remove(
+    return this.availabilityOverridesService.delete(
       this.getTenantId(tenant),
       id,
     );

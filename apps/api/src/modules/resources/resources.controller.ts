@@ -73,6 +73,6 @@ export class ResourcesController {
   ) {
     if (!tenant) throw new UnauthorizedException('Invalid request');
 
-    return this.resources.softDelete(tenant.id, id);
+    return this.resources.delete(tenant.id, id);
   }
 }

@@ -56,6 +56,6 @@ export class WeeklySchedulesController {
   @Delete(':id')
   async remove(@Tenant() tenant: TenantCtx | null, @Param('id') id: string) {
     if (!tenant) throw new UnauthorizedException('Invalid request');
-    return this.weekly.remove(tenant.id, id);
+    return this.weekly.delete(tenant.id, id);
   }
 }
