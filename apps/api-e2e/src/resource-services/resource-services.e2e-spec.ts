@@ -44,8 +44,8 @@ describe('ResourceService link (e2e)', () => {
       headers: headers(token),
     });
 
-    expect(Array.isArray(res.data)).toBe(true);
-    expect(res.data.some((x: any) => x.service?.id === SERVICE_ID)).toBe(true);
+    expect(Array.isArray(res.data.items)).toBe(true);
+    expect(res.data.items.some((x: any) => x.service?.id === SERVICE_ID)).toBe(true);
   });
 
   it('links + prevents duplicate (409 RESOURCE_SERVICE_ALREADY_LINKED)', async () => {
@@ -112,9 +112,8 @@ describe('ResourceService link (e2e)', () => {
       response: {
         status: 401,
         data: {
-          statusCode: 401,
+          code: 'INVALID_TENANT',
           message: 'Invalid tenant',
-          error: 'Unauthorized',
         },
       },
     });
@@ -159,7 +158,7 @@ describe('ResourceService link (e2e)', () => {
       headers: headers(token),
     });
 
-    expect(del.data.ok).toBe(true);
+    expect(del.data.success).toBe(true);
 
     await prisma.service.delete({ where: { id: service.id } });
     await prisma.resource.delete({ where: { id: resource.id } });

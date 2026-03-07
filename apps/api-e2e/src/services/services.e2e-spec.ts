@@ -83,7 +83,7 @@ describe('Services CRUD (e2e)', () => {
     const del = await axios.delete(`${baseURL}/api/services/${id}`, {
       headers: headers(token),
     });
-    expect(del.data.isActive).toBe(false);
+    expect(del.data.success).toBe(true);
   });
 
   it('validates locationId belongs to tenant (404 LOCATION_NOT_FOUND)', async () => {
@@ -119,9 +119,8 @@ describe('Services CRUD (e2e)', () => {
       response: {
         status: 401,
         data: {
-          statusCode: 401,
+          code: 'INVALID_TENANT',
           message: 'Invalid tenant',
-          error: 'Unauthorized',
         },
       },
     });

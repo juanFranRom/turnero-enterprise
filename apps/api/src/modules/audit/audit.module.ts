@@ -1,12 +1,17 @@
 import { Module } from '@nestjs/common';
-import { AUDIT_PORT } from '../../domain/audit/audit.port';
-import { PrismaAuditRepository } from '../../infrastructure/adapters/audit/prisma-audit.adapter';
+import { APPOINTMENT_HISTORY_PORT } from '../../infrastructure/adapters/audit/appointment-history.port';
+import { PrismaAppointmentHistoryRepository } from '../../infrastructure/adapters/audit/prisma-appointment-history.adapter';
+import { AUDIT_LOG_PORT } from '../../infrastructure/adapters/audit/audit-log.port';
+import { PrismaAuditLogRepository } from '../../infrastructure/adapters/audit/prisma-audit-log.adapter';
 
 @Module({
-  providers: [
-    PrismaAuditRepository,
-    { provide: AUDIT_PORT, useExisting: PrismaAuditRepository },
-  ],
-  exports: [AUDIT_PORT],
+	providers: [
+		PrismaAppointmentHistoryRepository,
+		{ provide: APPOINTMENT_HISTORY_PORT, useExisting: PrismaAppointmentHistoryRepository },
+
+		PrismaAuditLogRepository,
+		{ provide: AUDIT_LOG_PORT, useExisting: PrismaAuditLogRepository },
+	],
+	exports: [APPOINTMENT_HISTORY_PORT, AUDIT_LOG_PORT],
 })
 export class AuditModule {}

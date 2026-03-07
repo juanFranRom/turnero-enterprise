@@ -9,7 +9,7 @@ import { mapBusy, mapOverrides, mapWeeklySchedule } from '../../infrastructure/a
 import { CreateAppointmentDto } from './dtos/create-appointment.dto';
 import { CancelAppointmentDto } from './dtos/cancel-appointment.dto';
 import { RescheduleAppointmentDto } from './dtos/reschedule-appointment.dto';
-import { AUDIT_PORT, AuditPort } from '../../domain/audit/audit.port';
+import { APPOINTMENT_HISTORY_PORT, AppointmentHistoryPort } from '../../infrastructure/adapters/audit/appointment-history.port';
 import { toAppointmentResponse, type AppointmentResponseDto } from './dtos/appointment-response.dto';
 import { Prisma } from '@prisma/client';
 import { encodeCursor, decodeCursor } from '../../common/pagination/cursor.codec';
@@ -34,7 +34,7 @@ export class AppointmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly metrics: MetricsService,
-    @Inject(AUDIT_PORT) private readonly audit: AuditPort<Prisma.TransactionClient>,
+    @Inject(APPOINTMENT_HISTORY_PORT) private readonly audit: AppointmentHistoryPort<Prisma.TransactionClient>,
   ) {
     this.availabilityPort = new PrismaAvailabilityReadAdapter(prisma);
   }

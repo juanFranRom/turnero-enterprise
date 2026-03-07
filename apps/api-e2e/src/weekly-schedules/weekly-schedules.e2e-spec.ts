@@ -61,8 +61,9 @@ describe('WeeklySchedules CRUD (e2e)', () => {
       `${baseURL}/api/weekly-schedules?resourceId=${encodeURIComponent(RESOURCE_ID)}&dayOfWeek=2`,
       { headers: headers(token) },
     );
-    expect(Array.isArray(list.data)).toBe(true);
-    expect(list.data.some((x: any) => x.id === id)).toBe(true);
+
+    expect(Array.isArray(list.data.items)).toBe(true);
+    expect(list.data.items.some((x: any) => x.id === id)).toBe(true);
 
     const got = await axios.get(`${baseURL}/api/weekly-schedules/${id}`, {
       headers: headers(token),
@@ -80,7 +81,7 @@ describe('WeeklySchedules CRUD (e2e)', () => {
     const del = await axios.delete(`${baseURL}/api/weekly-schedules/${id}`, {
       headers: headers(token),
     });
-    expect(del.data.ok).toBe(true);
+    expect(del.data.success).toBe(true);
   });
 
   it('rejects invalid time range (400 INVALID_TIME_RANGE)', async () => {
@@ -142,9 +143,8 @@ describe('WeeklySchedules CRUD (e2e)', () => {
       response: {
         status: 401,
         data: {
-          statusCode: 401,
+          code: 'INVALID_TENANT',
           message: 'Invalid tenant',
-          error: 'Unauthorized',
         },
       },
     });

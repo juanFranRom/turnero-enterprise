@@ -18,10 +18,8 @@ export class TenantsController {
   async me(@Headers('x-tenant-slug') tenantSlug?: string) {
     if (!tenantSlug) {
       throw new BadRequestException({
-        error: {
-          code: 'TENANT_SLUG_REQUIRED',
-          message: 'Missing X-Tenant-Slug header',
-        },
+        code: 'TENANT_SLUG_REQUIRED',
+        message: 'Missing X-Tenant-Slug header',
       });
     }
 

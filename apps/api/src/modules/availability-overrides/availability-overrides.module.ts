@@ -3,11 +3,12 @@ import { AvailabilityOverridesController } from './availability-overrides.contro
 import { AvailabilityOverridesService } from './availability-overrides.service';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { MetricsModule } from '../metrics/metrics.module';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
   controllers: [AvailabilityOverridesController],
   providers: [AvailabilityOverridesService, PrismaService],
   exports: [AvailabilityOverridesService],
-  imports: [MetricsModule]
+  imports: [MetricsModule, AuditModule]
 })
 export class AvailabilityOverridesModule {}

@@ -31,7 +31,7 @@ export class RetryAfter429Filter implements ExceptionFilter {
     // Respuesta estándar de Nest
     const response =
       typeof body === 'string'
-        ? { error: { code: 'TOO_MANY_REQUESTS', message: body } }
+        ? { code: 'TOO_MANY_REQUESTS', message: body }
         : body;
 
     res.status(status).json(response);

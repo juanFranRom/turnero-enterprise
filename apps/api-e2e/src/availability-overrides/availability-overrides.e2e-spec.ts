@@ -99,8 +99,8 @@ describe('AvailabilityOverrides CRUD (e2e)', () => {
             { headers: headers(token) },
         );
 
-        expect(Array.isArray(list.data.data)).toBe(true);
-        expect(list.data.data.some((x: any) => x.id === id)).toBe(true);
+        expect(Array.isArray(list.data.items)).toBe(true);
+        expect(list.data.items.some((x: any) => x.id === id)).toBe(true);
 
         const got = await axios.get(
             `${baseURL}/api/availability-overrides/${id}`,
@@ -374,10 +374,10 @@ describe('AvailabilityOverrides CRUD (e2e)', () => {
             }),
         ).rejects.toMatchObject({
             response: {
-                status: 404,
+                status: 401,
                 data: {
-                    code: 'AVAILABILITY_OVERRIDE_NOT_FOUND',
-                    message: 'Availability override not found',
+                    code: 'INVALID_TENANT',
+                    message: 'Invalid tenant',
                 },
             },
         });
@@ -419,8 +419,8 @@ describe('AvailabilityOverrides CRUD (e2e)', () => {
             { headers: headers(token) },
         );
 
-        expect(Array.isArray(firstPage.data.data)).toBe(true);
-        expect(firstPage.data.data.length).toBe(1);
+        expect(Array.isArray(firstPage.data.items)).toBe(true);
+        expect(firstPage.data.items.length).toBe(1);
         expect(firstPage.data.nextCursor === null || typeof firstPage.data.nextCursor === 'string').toBe(true);
 
         if (firstPage.data.nextCursor) {
@@ -429,9 +429,9 @@ describe('AvailabilityOverrides CRUD (e2e)', () => {
                 { headers: headers(token) },
             );
 
-            expect(Array.isArray(secondPage.data.data)).toBe(true);
-            expect(secondPage.data.data.length).toBe(1);
-            expect(secondPage.data.data[0].id).not.toBe(firstPage.data.data[0].id);
+            expect(Array.isArray(secondPage.data.items)).toBe(true);
+            expect(secondPage.data.items.length).toBe(1);
+            expect(secondPage.data.items[0].id).not.toBe(firstPage.data.items[0].id);
         }
 
         await axios.delete(`${baseURL}/api/availability-overrides/${a.data.id}`, {

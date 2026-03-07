@@ -57,6 +57,7 @@ model User {
 
   memberships Membership[]
   sessions    Session[]
+	auditLogs   AuditLog[]
 
   createdAppointments Appointment[] @relation("AppointmentCreatedBy")
   updatedAppointments Appointment[] @relation("AppointmentUpdatedBy")
@@ -342,51 +343,90 @@ enum Role {
 /// ------------------------------
 
 enum AppointmentHistoryAction {
-  CREATED
-  CANCELLED
-  RESCHEDULED
+	CREATED
+	CANCELLED
+	RESCHEDULED
 }
 
 enum AuditActorType {
-  USER
-  SYSTEM
+	USER
+	SYSTEM
+}
+
+enum AuditEntity {
+	LOCATION
+	RESOURCE
+	SERVICE
+	WEEKLY_SCHEDULE
+	RESOURCE_SERVICE
+	AVAILABILITY_OVERRIDE
+}
+
+enum AuditAction {
+	CREATE
+	UPDATE
+	DELETE
 }
 
 model AppointmentHistory {
-  id            String   @id @default(uuid())
-  tenantId      String
-  appointmentId String
+	id            String   @id @default(uuid())
+	tenantId      String
+	appointmentId String
 
-  action        AppointmentHistoryAction
+	action AppointmentHistoryAction
 
-  actorType     AuditActorType @default(USER)
-  actorUserId   String?
-  // (opcionales si luego querés: actorSessionId, ip, userAgent)
+	actorType   AuditActorType @default(USER)
+	actorUserId String?
 
-  resourceId    String
-  serviceId     String?
-  locationId    String
+	resourceId String
+	serviceId  String?
+	locationId String
 
-  prevStartsAt  DateTime?
-  prevEndsAt    DateTime?
-  newStartsAt   DateTime?
-  newEndsAt     DateTime?
+	prevStartsAt DateTime?
+	prevEndsAt   DateTime?
+	newStartsAt  DateTime?
+	newEndsAt    DateTime?
 
-  idempotencyKey String?
-  reason        String?
-  metadata      Json?
+	idempotencyKey String?
+	reason         String?
+	metadata       Json?
 
-  createdAt     DateTime @default(now())
-  
-  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  
-  @@index([tenantId, createdAt(sort: Desc), id(sort: Desc)])
-  @@index([tenantId, action, createdAt(sort: Desc), id(sort: Desc)])
-  @@index([tenantId, actorUserId, createdAt(sort: Desc), id(sort: Desc)])
-  @@index([tenantId, appointmentId, createdAt, id])
-  @@index([tenantId, appointmentId, createdAt(sort: Desc)])
-  @@index([tenantId, action, createdAt(sort: Desc)])
-  @@index([tenantId, actorUserId, createdAt(sort: Desc)])
-  @@index([tenantId, createdAt(sort: Desc)])
-  @@index([tenantId, appointmentId])
+	createdAt DateTime @default(now())
+
+	appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+	@@index([tenantId, createdAt(sort: Desc), id(sort: Desc)])
+	@@index([tenantId, action, createdAt(sort: Desc), id(sort: Desc)])
+	@@index([tenantId, actorUserId, createdAt(sort: Desc), id(sort: Desc)])
+	@@index([tenantId, appointmentId, createdAt, id])
+	@@index([tenantId, appointmentId, createdAt(sort: Desc)])
+	@@index([tenantId, action, createdAt(sort: Desc)])
+	@@index([tenantId, actorUserId, createdAt(sort: Desc)])
+	@@index([tenantId, createdAt(sort: Desc)])
+	@@index([tenantId, appointmentId])
+}
+
+model AuditLog {
+	id        String       @id @default(uuid())
+	tenantId  String
+	entity    AuditEntity
+	entityId  String
+	action    AuditAction
+
+	actorType   AuditActorType @default(USER)
+	actorUserId String?
+
+	before   Json?
+	after    Json?
+	metadata Json?
+
+	createdAt DateTime @default(now())
+
+	actorUser User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+	@@index([tenantId, createdAt(sort: Desc), id(sort: Desc)])
+	@@index([tenantId, action, createdAt(sort: Desc), id(sort: Desc)])
+	@@index([tenantId, entity, createdAt(sort: Desc), id(sort: Desc)])
+	@@index([tenantId, entity, entityId, createdAt(sort: Desc), id(sort: Desc)])
+	@@index([tenantId, actorUserId, createdAt(sort: Desc), id(sort: Desc)])
 }

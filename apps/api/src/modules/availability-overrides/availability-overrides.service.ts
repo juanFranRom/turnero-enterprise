@@ -1,9 +1,11 @@
 import {
 	BadRequestException,
 	ConflictException,
+	Inject,
 	Injectable,
 	NotFoundException,
 } from '@nestjs/common';
+import { Prisma, type AvailabilityOverride } from '@prisma/client';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CreateAvailabilityOverrideDto } from './dtos/create-availability-override.dto';
 import { UpdateAvailabilityOverrideDto } from './dtos/update-availability-override.dto';
@@ -12,8 +14,15 @@ import {
 	assertIntervalValid,
 	parseOptionalDate,
 } from '../../common/calendar';
-import { listWithCreatedAtCursor, toCursorListResponse } from '../../common/pagination/list-with-cursor';
+import {
+	listWithCreatedAtCursor,
+	toCursorListResponse,
+} from '../../common/pagination/list-with-cursor';
 import { OwnerCrudMetrics } from '../../common/metrics';
+import {
+	AUDIT_LOG_PORT,
+	type AuditLogPort,
+} from '../../infrastructure/adapters/audit/audit-log.port';
 
 function omitUndefined<T extends Record<string, unknown>>(obj: T): T {
 	return Object.fromEntries(
@@ -28,9 +37,30 @@ export class AvailabilityOverridesService {
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly ownerCrudMetrics: OwnerCrudMetrics,
+		@Inject(AUDIT_LOG_PORT)
+		private readonly auditLog: AuditLogPort<Prisma.TransactionClient>,
 	) {}
 
-	async create(tenantId: string, dto: CreateAvailabilityOverrideDto) {
+	private toAuditSnapshot(item: AvailabilityOverride) {
+		return {
+			id: item.id,
+			tenantId: item.tenantId,
+			locationId: item.locationId,
+			resourceId: item.resourceId,
+			kind: item.kind,
+			startsAt: item.startsAt.toISOString(),
+			endsAt: item.endsAt.toISOString(),
+			reason: item.reason,
+			createdAt: item.createdAt.toISOString(),
+			updatedAt: item.updatedAt.toISOString(),
+		};
+	}
+
+	async create(
+		tenantId: string,
+		actorUserId: string,
+		dto: CreateAvailabilityOverrideDto,
+	) {
 		return this.ownerCrudMetrics.track({
 			entity: this.metricEntity,
 			action: 'create',
@@ -45,88 +75,106 @@ export class AvailabilityOverridesService {
 					'create',
 				);
 
-				const location = await this.prisma.location.findFirst({
-					where: {
-						id: dto.locationId,
-						tenantId,
-					},
-					select: {
-						id: true,
-					},
-				});
-
-				if (!location) {
-					this.ownerCrudMetrics.validationError({
-						entity: this.metricEntity,
-						action: 'create',
-						code: 'LOCATION_NOT_FOUND',
-						tenant: tenantId,
-					});
-
-					throw new NotFoundException({
-						code: 'LOCATION_NOT_FOUND',
-						message: 'Location not found',
-					});
-				}
-
-				const resource = await this.prisma.resource.findFirst({
-					where: {
-						id: dto.resourceId,
-						tenantId,
-					},
-					select: {
-						id: true,
-						locationId: true,
-					},
-				});
-
-				if (!resource) {
-					this.ownerCrudMetrics.validationError({
-						entity: this.metricEntity,
-						action: 'create',
-						code: 'RESOURCE_NOT_FOUND',
-						tenant: tenantId,
-					});
-
-					throw new NotFoundException({
-						code: 'RESOURCE_NOT_FOUND',
-						message: 'Resource not found',
-					});
-				}
-
-				if (resource.locationId !== dto.locationId) {
-					this.ownerCrudMetrics.validationError({
-						entity: this.metricEntity,
-						action: 'create',
-						code: 'INVALID_LOCATION_RESOURCE_RELATION',
-						tenant: tenantId,
-					});
-
-					throw new BadRequestException({
-						code: 'INVALID_LOCATION_RESOURCE_RELATION',
-						message: 'Resource does not belong to location',
-					});
-				}
-
-				await this.assertNoOverlap({
-					tenantId,
-					resourceId: dto.resourceId,
-					startsAt,
-					endsAt,
-					action: 'create',
-				});
-
 				try {
-					return await this.prisma.availabilityOverride.create({
-						data: {
+					return await this.prisma.$transaction(async (tx) => {
+						const location = await tx.location.findFirst({
+							where: {
+								id: dto.locationId,
+								tenantId,
+							},
+							select: {
+								id: true,
+							},
+						});
+
+						if (!location) {
+							this.ownerCrudMetrics.validationError({
+								entity: this.metricEntity,
+								action: 'create',
+								code: 'LOCATION_NOT_FOUND',
+								tenant: tenantId,
+							});
+
+							throw new NotFoundException({
+								code: 'LOCATION_NOT_FOUND',
+								message: 'Location not found',
+							});
+						}
+
+						const resource = await tx.resource.findFirst({
+							where: {
+								id: dto.resourceId,
+								tenantId,
+							},
+							select: {
+								id: true,
+								locationId: true,
+							},
+						});
+
+						if (!resource) {
+							this.ownerCrudMetrics.validationError({
+								entity: this.metricEntity,
+								action: 'create',
+								code: 'RESOURCE_NOT_FOUND',
+								tenant: tenantId,
+							});
+
+							throw new NotFoundException({
+								code: 'RESOURCE_NOT_FOUND',
+								message: 'Resource not found',
+							});
+						}
+
+						if (resource.locationId !== dto.locationId) {
+							this.ownerCrudMetrics.validationError({
+								entity: this.metricEntity,
+								action: 'create',
+								code: 'INVALID_LOCATION_RESOURCE_RELATION',
+								tenant: tenantId,
+							});
+
+							throw new BadRequestException({
+								code: 'INVALID_LOCATION_RESOURCE_RELATION',
+								message: 'Resource does not belong to location',
+							});
+						}
+
+						await this.assertNoOverlapTx({
+							tx,
 							tenantId,
-							locationId: dto.locationId,
 							resourceId: dto.resourceId,
-							kind: dto.kind,
 							startsAt,
 							endsAt,
-							reason: dto.reason ?? null,
-						},
+							action: 'create',
+						});
+
+						const created = await tx.availabilityOverride.create({
+							data: {
+								tenantId,
+								locationId: dto.locationId,
+								resourceId: dto.resourceId,
+								kind: dto.kind,
+								startsAt,
+								endsAt,
+								reason: dto.reason ?? null,
+							},
+						});
+
+						await this.auditLog.record(
+							tx,
+							{ type: 'USER', userId: actorUserId },
+							{
+								tenantId,
+								entity: 'AVAILABILITY_OVERRIDE',
+								entityId: created.id,
+								action: 'CREATE',
+								before: null,
+								after: this.toAuditSnapshot(created),
+							},
+						);
+
+						return created;
 					});
 				} catch (error: any) {
 					this.rethrowIfOverrideOverlap(error, tenantId, 'create');
@@ -218,28 +266,50 @@ export class AvailabilityOverridesService {
 		});
 	}
 
-    private async findByIdOrThrow(
-        tenantId: string,
-        id: string,
-        select?: Record<string, unknown>,
-    ) {
-        const item = await this.prisma.availabilityOverride.findFirst({
-            where: { id, tenantId },
-            ...(select ? { select } : {}),
-        });
+	private async findByIdOrThrow(
+		tenantId: string,
+		id: string,
+		select?: Record<string, unknown>,
+	) {
+		const item = await this.prisma.availabilityOverride.findFirst({
+			where: { id, tenantId },
+			...(select ? { select } : {}),
+		});
 
-        if (!item) {
-            throw new NotFoundException({
-                code: 'AVAILABILITY_OVERRIDE_NOT_FOUND',
-                message: 'Availability override not found',
-            });
-        }
+		if (!item) {
+			throw new NotFoundException({
+				code: 'AVAILABILITY_OVERRIDE_NOT_FOUND',
+				message: 'Availability override not found',
+			});
+		}
 
-        return item;
-    }
+		return item;
+	}
+
+	private async findByIdOrThrowTx(
+		tx: Prisma.TransactionClient,
+		tenantId: string,
+		id: string,
+		select?: Record<string, unknown>,
+	) {
+		const item = await tx.availabilityOverride.findFirst({
+			where: { id, tenantId },
+			...(select ? { select } : {}),
+		});
+
+		if (!item) {
+			throw new NotFoundException({
+				code: 'AVAILABILITY_OVERRIDE_NOT_FOUND',
+				message: 'Availability override not found',
+			});
+		}
+
+		return item;
+	}
 
 	async update(
 		tenantId: string,
+		actorUserId: string,
 		id: string,
 		dto: UpdateAvailabilityOverrideDto,
 	) {
@@ -248,49 +318,69 @@ export class AvailabilityOverridesService {
 			action: 'update',
 			tenant: tenantId,
 			run: async () => {
-				const existing = await this.findByIdOrThrow(tenantId, id, {
-                    id: true,
-                    tenantId: true,
-                    locationId: true,
-                    resourceId: true,
-                    kind: true,
-                    startsAt: true,
-                    endsAt: true,
-                    reason: true,
-                });
-
-				const startsAt = dto.startsAt
-					? this.parseRequiredDate(dto.startsAt, tenantId, 'update')
-					: existing.startsAt;
-
-				const endsAt = dto.endsAt
-					? this.parseRequiredDate(dto.endsAt, tenantId, 'update')
-					: existing.endsAt;
-
-				this.assertValidInterval(
-					{ start: startsAt, end: endsAt },
-					tenantId,
-					'update',
-				);
-
-				await this.assertNoOverlap({
-					tenantId,
-					resourceId: existing.resourceId,
-					startsAt,
-					endsAt,
-					excludeId: existing.id,
-					action: 'update',
-				});
-
 				try {
-					return await this.prisma.availabilityOverride.update({
-						where: { id: existing.id },
-						data: {
-							kind: dto.kind ?? existing.kind,
+					return await this.prisma.$transaction(async (tx) => {
+						const existing = await this.findByIdOrThrowTx(tx, tenantId, id, {
+							id: true,
+							tenantId: true,
+							locationId: true,
+							resourceId: true,
+							kind: true,
+							startsAt: true,
+							endsAt: true,
+							reason: true,
+							createdAt: true,
+							updatedAt: true,
+						});
+
+						const startsAt = dto.startsAt
+							? this.parseRequiredDate(dto.startsAt, tenantId, 'update')
+							: existing.startsAt;
+
+						const endsAt = dto.endsAt
+							? this.parseRequiredDate(dto.endsAt, tenantId, 'update')
+							: existing.endsAt;
+
+						this.assertValidInterval(
+							{ start: startsAt, end: endsAt },
+							tenantId,
+							'update',
+						);
+
+						await this.assertNoOverlapTx({
+							tx,
+							tenantId,
+							resourceId: existing.resourceId,
 							startsAt,
 							endsAt,
-							reason: dto.reason ?? existing.reason,
-						},
+							excludeId: existing.id,
+							action: 'update',
+						});
+
+						const updated = await tx.availabilityOverride.update({
+							where: { id: existing.id },
+							data: {
+								kind: dto.kind ?? existing.kind,
+								startsAt,
+								endsAt,
+								reason: dto.reason ?? existing.reason,
+							},
+						});
+
+						await this.auditLog.record(
+							tx,
+							{ type: 'USER', userId: actorUserId },
+							{
+								tenantId,
+								entity: 'AVAILABILITY_OVERRIDE',
+								entityId: updated.id,
+								action: 'UPDATE',
+								before: this.toAuditSnapshot(existing as AvailabilityOverride),
+								after: this.toAuditSnapshot(updated),
+							},
+						);
+
+						return updated;
 					});
 				} catch (error: any) {
 					this.rethrowIfOverrideOverlap(error, tenantId, 'update');
@@ -300,23 +390,54 @@ export class AvailabilityOverridesService {
 		});
 	}
 
-	async delete(tenantId: string, id: string) {
+	async delete(
+		tenantId: string,
+		actorUserId: string,
+		id: string,
+	) {
 		return this.ownerCrudMetrics.track({
 			entity: this.metricEntity,
 			action: 'delete',
 			tenant: tenantId,
 			run: async () => {
-				const existing = await this.findByIdOrThrow(tenantId, id, {
-                    id: true,
-                });
+				return this.prisma.$transaction(async (tx) => {
+					const existing = await this.findByIdOrThrowTx(tx, tenantId, id, {
+						id: true,
+						tenantId: true,
+						locationId: true,
+						resourceId: true,
+						kind: true,
+						startsAt: true,
+						endsAt: true,
+						reason: true,
+						createdAt: true,
+						updatedAt: true,
+					});
 
-				await this.prisma.availabilityOverride.delete({
-					where: { id: existing.id },
+					await tx.availabilityOverride.delete({
+						where: { id: existing.id },
+					});
+
+					await this.auditLog.record(
+						tx,
+						{ type: 'USER', userId: actorUserId },
+						{
+							tenantId,
+							entity: 'AVAILABILITY_OVERRIDE',
+							entityId: existing.id,
+							action: 'DELETE',
+							before: this.toAuditSnapshot(existing as AvailabilityOverride),
+							after: null,
+							metadata: {
+								mode: 'hard-delete',
+							},
+						},
+					);
+
+					return {
+						success: true,
+					};
 				});
-
-				return {
-					success: true,
-				};
 			},
 		});
 	}
@@ -429,6 +550,46 @@ export class AvailabilityOverridesService {
 		}
 	}
 
+	private async assertNoOverlapTx(args: {
+		tx: Prisma.TransactionClient;
+		tenantId: string;
+		resourceId: string;
+		startsAt: Date;
+		endsAt: Date;
+		excludeId?: string;
+		action: 'create' | 'update';
+	}) {
+		const conflict = await args.tx.availabilityOverride.findFirst({
+			where: {
+				tenantId: args.tenantId,
+				resourceId: args.resourceId,
+				...(args.excludeId ? { id: { not: args.excludeId } } : {}),
+				startsAt: { lt: args.endsAt },
+				endsAt: { gt: args.startsAt },
+			},
+			select: {
+				id: true,
+			},
+		});
+
+		if (conflict) {
+			this.ownerCrudMetrics.conflictError({
+				entity: this.metricEntity,
+				action: args.action,
+				code: 'AVAILABILITY_OVERRIDE_OVERLAP',
+				tenant: args.tenantId,
+			});
+
+			throw new ConflictException({
+				code: 'AVAILABILITY_OVERRIDE_OVERLAP',
+				message: 'Availability override overlaps existing one',
+				details: {
+					conflictingOverrideId: conflict.id,
+				},
+			});
+		}
+	}
+
 	private rethrowIfOverrideOverlap(
 		error: any,
 		tenantId: string,
@@ -438,9 +599,9 @@ export class AvailabilityOverridesService {
 		const metaTarget = error?.meta?.target;
 
 		if (
-            error?.code === 'P2004' ||
-            message.includes('availability_override_no_overlap') ||
-            String(metaTarget ?? '').includes('availability_override_no_overlap')
+			error?.code === 'P2004' ||
+			message.includes('availability_override_no_overlap') ||
+			String(metaTarget ?? '').includes('availability_override_no_overlap')
 		) {
 			this.ownerCrudMetrics.conflictError({
 				entity: this.metricEntity,

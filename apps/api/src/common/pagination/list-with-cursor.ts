@@ -157,7 +157,7 @@ export function toCursorListResponse<T>(result: {
 	nextCursor: string | null;
 }) {
 	return {
-		data: result.items,
+		items: result.items,
 		nextCursor: result.nextCursor,
 	};
 }

@@ -50,13 +50,11 @@ export class AppointmentsController {
 
     if (finalKey && finalKey.length > 80) {
       throw new BadRequestException({
-        error: {
-          code: 'INVALID_IDEMPOTENCY_KEY',
-          message: 'Idempotency-Key must be at most 80 characters',
-          details: {
-            maxLength: 80,
-            receivedLength: finalKey.length,
-          },
+        code: 'INVALID_IDEMPOTENCY_KEY',
+        message: 'Idempotency-Key must be at most 80 characters',
+        details: {
+          maxLength: 80,
+          receivedLength: finalKey.length,
         },
       });
     }
@@ -79,13 +77,11 @@ export class AppointmentsController {
 
     if (finalKey && finalKey.length > 80) {
       throw new BadRequestException({
-        error: {
-          code: 'INVALID_IDEMPOTENCY_KEY',
-          message: 'Idempotency-Key must be at most 80 characters',
-          details: {
-            maxLength: 80,
-            receivedLength: finalKey.length,
-          },
+        code: 'INVALID_IDEMPOTENCY_KEY',
+        message: 'Idempotency-Key must be at most 80 characters',
+        details: {
+          maxLength: 80,
+          receivedLength: finalKey.length,
         },
       });
     }
@@ -104,10 +100,8 @@ export class AppointmentsController {
   ) {
     if (!tenant) {
       throw new NotFoundException({
-        error: {
-          code: 'TENANT_NOT_FOUND',
-          message: 'Tenant not found',
-        },
+        code: 'TENANT_NOT_FOUND',
+        message: 'Tenant not found',
       });
     }
 
@@ -126,10 +120,8 @@ export class AppointmentsController {
   ) {
     if (!tenant) {
       throw new NotFoundException({
-        error: {
-          code: 'TENANT_NOT_FOUND',
-          message: 'Tenant not found',
-        },
+        code: 'TENANT_NOT_FOUND',
+        message: 'Tenant not found',
       });
     }
 

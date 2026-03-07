@@ -85,7 +85,7 @@ describe('Locations CRUD (e2e)', () => {
         'x-e2e': '1',
       },
     });
-    expect(del.data.isActive).toBe(false);
+    expect(del.data.success).toBe(true);
   });
 
   it('validates timezone (400 INVALID_TIMEZONE)', async () => {
@@ -137,9 +137,8 @@ describe('Locations CRUD (e2e)', () => {
       response: {
         status: 401,
         data: {
-          statusCode: 401,
+          code: 'INVALID_TENANT',
           message: 'Invalid tenant',
-          error: 'Unauthorized',
         },
       },
     });

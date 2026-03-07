@@ -117,10 +117,8 @@ export class PrismaExceptionFilter implements ExceptionFilter {
         `Unhandled PrismaClientKnownRequestError`,
       );
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Unexpected database error',
-        },
+        code: 'INTERNAL_ERROR',
+        message: 'Unexpected database error',
       });
     }
 
@@ -167,7 +165,7 @@ export class PrismaExceptionFilter implements ExceptionFilter {
         'PrismaClientUnknownRequestError (unmapped)',
       );
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-        error: { code: 'INTERNAL_ERROR', message: 'Unexpected database error' },
+        code: 'INTERNAL_ERROR', message: 'Unexpected database error' ,
       });
     }
 
@@ -176,7 +174,7 @@ export class PrismaExceptionFilter implements ExceptionFilter {
       'Non-prisma exception reached PrismaExceptionFilter',
     );
     return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-      error: { code: 'INTERNAL_ERROR', message: 'Unexpected error' },
+      code: 'INTERNAL_ERROR', message: 'Unexpected error'
     });
   }
 
@@ -188,11 +186,9 @@ export class PrismaExceptionFilter implements ExceptionFilter {
         return {
           status: HttpStatus.CONFLICT,
           body: {
-            error: {
-              code: 'UNIQUE_VIOLATION',
-              message: 'A record with the same unique key already exists',
-              details: { target: (e.meta as any)?.target },
-            },
+            code: 'UNIQUE_VIOLATION',
+            message: 'A record with the same unique key already exists',
+            details: { target: (e.meta as any)?.target },
           },
         };
 
@@ -200,10 +196,8 @@ export class PrismaExceptionFilter implements ExceptionFilter {
         return {
           status: HttpStatus.NOT_FOUND,
           body: {
-            error: {
-              code: 'NOT_FOUND',
-              message: 'Record not found',
-            },
+            code: 'NOT_FOUND',
+            message: 'Record not found',
           },
         };
 
@@ -211,11 +205,9 @@ export class PrismaExceptionFilter implements ExceptionFilter {
         return {
           status: HttpStatus.CONFLICT,
           body: {
-            error: {
-              code: 'FK_VIOLATION',
-              message: 'Related record not found (foreign key constraint)',
-              details: { field_name: (e.meta as any)?.field_name },
-            },
+            code: 'FK_VIOLATION',
+            message: 'Related record not found (foreign key constraint)',
+            details: { field_name: (e.meta as any)?.field_name },
           },
         };
 
@@ -246,10 +238,8 @@ export class PrismaExceptionFilter implements ExceptionFilter {
         return {
           status: HttpStatus.CONFLICT,
           body: {
-            error: {
-              code: 'APPOINTMENT_OVERLAP',
-              message: 'The appointment overlaps an existing booking',
-            },
+            code: 'APPOINTMENT_OVERLAP',
+            message: 'The appointment overlaps an existing booking',
           },
         };
       }
@@ -262,10 +252,8 @@ export class PrismaExceptionFilter implements ExceptionFilter {
         return {
           status: HttpStatus.CONFLICT,
           body: {
-            error: {
-              code: 'AVAILABILITY_OVERRIDE_OVERLAP',
-              message: 'Availability override overlaps an existing override',
-            },
+            code: 'AVAILABILITY_OVERRIDE_OVERLAP',
+            message: 'Availability override overlaps an existing override',
           },
         };
       }
@@ -273,11 +261,9 @@ export class PrismaExceptionFilter implements ExceptionFilter {
       return {
         status: HttpStatus.CONFLICT,
         body: {
-          error: {
-            code: 'EXCLUSION_CONSTRAINT_VIOLATION',
-            message: 'Database exclusion constraint violation',
-            details: pg?.detail ? { detail: pg.detail } : undefined,
-          },
+          code: 'EXCLUSION_CONSTRAINT_VIOLATION',
+          message: 'Database exclusion constraint violation',
+          details: pg?.detail ? { detail: pg.detail } : undefined,
         },
       };
     }
@@ -286,10 +272,8 @@ export class PrismaExceptionFilter implements ExceptionFilter {
       return {
         status: HttpStatus.CONFLICT,
         body: {
-          error: {
-            code: 'UNIQUE_VIOLATION',
-            message: 'A record with the same unique key already exists',
-          },
+          code: 'UNIQUE_VIOLATION',
+          message: 'A record with the same unique key already exists',
         },
       };
     }
@@ -298,10 +282,8 @@ export class PrismaExceptionFilter implements ExceptionFilter {
       return {
         status: HttpStatus.CONFLICT,
         body: {
-          error: {
-            code: 'FK_VIOLATION',
-            message: 'Foreign key constraint violation',
-          },
+          code: 'FK_VIOLATION',
+          message: 'Foreign key constraint violation',
         },
       };
     }
@@ -310,10 +292,8 @@ export class PrismaExceptionFilter implements ExceptionFilter {
       return {
         status: HttpStatus.BAD_REQUEST,
         body: {
-          error: {
-            code: 'CHECK_VIOLATION',
-            message: 'Check constraint violation',
-          },
+          code: 'CHECK_VIOLATION',
+          message: 'Check constraint violation',
         },
       };
     }
@@ -322,11 +302,9 @@ export class PrismaExceptionFilter implements ExceptionFilter {
       return {
         status: HttpStatus.CONFLICT,
         body: {
-          error: {
-            code: 'INTEGRITY_VIOLATION',
-            message: 'Database integrity constraint violation',
-            details: pg?.detail ? { detail: pg.detail } : undefined,
-          },
+          code: 'INTEGRITY_VIOLATION',
+          message: 'Database integrity constraint violation',
+          details: pg?.detail ? { detail: pg.detail } : undefined,
         },
       };
     }

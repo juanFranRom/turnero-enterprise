@@ -41,23 +41,19 @@ function assertCsrfOrigin(req: Request) {
   const src = origin ?? referer ?? '';
   if (!src) {
     throw new UnauthorizedException({
-      error: {
-        code: 'CSRF_ORIGIN_REQUIRED',
-        message: 'CSRF check failed',
-      },
+      code: 'CSRF_ORIGIN_REQUIRED',
+      message: 'CSRF check failed',
     });
   }
 
   const ok = allowed.some((a) => src.startsWith(a));
   if (!ok) {
     throw new UnauthorizedException({
-      error: {
-        code: 'CSRF_ORIGIN_INVALID',
-        message: 'CSRF check failed',
-        details: {
-          origin: origin ?? null,
-          referer: referer ?? null,
-        },
+      code: 'CSRF_ORIGIN_INVALID',
+      message: 'CSRF check failed',
+      details: {
+        origin: origin ?? null,
+        referer: referer ?? null,
       },
     });
   }
@@ -83,10 +79,8 @@ export class AuthController {
     const tenant = (req as any).tenant;
     if (!tenant) {
       throw new UnauthorizedException({
-        error: {
-          code: 'TENANT_CONTEXT_REQUIRED',
-          message: 'Tenant context is required',
-        },
+        code: 'TENANT_CONTEXT_REQUIRED',
+        message: 'Tenant context is required',
       });
     }
 
@@ -123,10 +117,8 @@ export class AuthController {
     const tenant = (req as any).tenant;
     if (!tenant) {
       throw new UnauthorizedException({
-        error: {
-          code: 'TENANT_CONTEXT_REQUIRED',
-          message: 'Tenant context is required',
-        },
+        code: 'TENANT_CONTEXT_REQUIRED',
+        message: 'Tenant context is required',
       });
     }
 
@@ -135,10 +127,8 @@ export class AuthController {
     const refreshToken = this.authService.getRefreshFromCookie(req);
     if (!refreshToken) {
       throw new UnauthorizedException({
-        error: {
-          code: 'REFRESH_TOKEN_MISSING',
-          message: 'Missing refresh token',
-        },
+        code: 'REFRESH_TOKEN_MISSING',
+        message: 'Missing refresh token',
       });
     }
 
@@ -194,10 +184,8 @@ export class AuthController {
   ) {
     if (!tenant) {
       throw new UnauthorizedException({
-        error: {
-          code: 'TENANT_CONTEXT_REQUIRED',
-          message: 'Tenant context is required',
-        },
+        code: 'TENANT_CONTEXT_REQUIRED',
+        message: 'Tenant context is required',
       });
     }
 

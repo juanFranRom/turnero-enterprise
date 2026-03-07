@@ -1,6 +1,7 @@
 import {
 	BadRequestException,
 	ConflictException,
+	Inject,
 	Injectable,
 	NotFoundException,
 } from '@nestjs/common';
@@ -14,6 +15,10 @@ import { parseOptionalDate } from '../../common/calendar/dates';
 import { assertIntervalValid } from '../../common/calendar/intervals';
 import { OwnerCrudMetrics } from '../../common/metrics';
 import { toCursorListResponse } from '../../common/pagination/list-with-cursor';
+import {
+	AUDIT_LOG_PORT,
+	type AuditLogPort,
+} from '../../infrastructure/adapters/audit/audit-log.port';
 
 @Injectable()
 export class WeeklySchedulesService {
@@ -22,13 +27,50 @@ export class WeeklySchedulesService {
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly ownerCrudMetrics: OwnerCrudMetrics,
+		@Inject(AUDIT_LOG_PORT)
+		private readonly auditLog: AuditLogPort<Prisma.TransactionClient>,
 	) {}
+
+	private toAuditSnapshot(row: WeeklySchedule) {
+		return {
+			id: row.id,
+			tenantId: row.tenantId,
+			locationId: row.locationId,
+			resourceId: row.resourceId,
+			dayOfWeek: row.dayOfWeek,
+			startTime: row.startTime.toISOString(),
+			endTime: row.endTime.toISOString(),
+			effectiveFrom: row.effectiveFrom.toISOString(),
+			effectiveTo: row.effectiveTo ? row.effectiveTo.toISOString() : null,
+			createdAt: row.createdAt.toISOString(),
+			updatedAt: row.updatedAt.toISOString(),
+		};
+	}
 
 	private async getByIdOrThrow(
 		tenantId: string,
 		id: string,
 	): Promise<WeeklySchedule> {
 		const row = await this.prisma.weeklySchedule.findFirst({
+			where: { id, tenantId },
+		});
+
+		if (!row) {
+			throw new NotFoundException({
+				code: 'WEEKLY_SCHEDULE_NOT_FOUND',
+				message: 'Weekly schedule not found',
+			});
+		}
+
+		return row;
+	}
+
+	private async getByIdOrThrowTx(
+		tx: Prisma.TransactionClient,
+		tenantId: string,
+		id: string,
+	): Promise<WeeklySchedule> {
+		const row = await tx.weeklySchedule.findFirst({
 			where: { id, tenantId },
 		});
 
@@ -54,6 +96,67 @@ export class WeeklySchedulesService {
 				select: { id: true },
 			}),
 			this.prisma.resource.findFirst({
+				where: { id: resourceId, tenantId },
+				select: { id: true, locationId: true },
+			}),
+		]);
+
+		if (!loc) {
+			this.ownerCrudMetrics.validationError({
+				entity: this.metricEntity,
+				action,
+				code: 'LOCATION_NOT_FOUND',
+				tenant: tenantId,
+			});
+
+			throw new NotFoundException({
+				code: 'LOCATION_NOT_FOUND',
+				message: 'Location not found',
+			});
+		}
+
+		if (!res) {
+			this.ownerCrudMetrics.validationError({
+				entity: this.metricEntity,
+				action,
+				code: 'RESOURCE_NOT_FOUND',
+				tenant: tenantId,
+			});
+
+			throw new NotFoundException({
+				code: 'RESOURCE_NOT_FOUND',
+				message: 'Resource not found',
+			});
+		}
+
+		if (res.locationId !== locationId) {
+			this.ownerCrudMetrics.validationError({
+				entity: this.metricEntity,
+				action,
+				code: 'RESOURCE_LOCATION_MISMATCH',
+				tenant: tenantId,
+			});
+
+			throw new BadRequestException({
+				code: 'RESOURCE_LOCATION_MISMATCH',
+				message: 'Resource does not belong to location',
+			});
+		}
+	}
+
+	private async assertLocationResourceSameTenantTx(
+		tx: Prisma.TransactionClient,
+		tenantId: string,
+		locationId: string,
+		resourceId: string,
+		action: 'create' | 'update',
+	) {
+		const [loc, res] = await Promise.all([
+			tx.location.findFirst({
+				where: { id: locationId, tenantId },
+				select: { id: true },
+			}),
+			tx.resource.findFirst({
 				where: { id: resourceId, tenantId },
 				select: { id: true, locationId: true },
 			}),
@@ -149,6 +252,7 @@ export class WeeklySchedulesService {
 
 	async create(
 		tenantId: string,
+		actorUserId: string,
 		dto: CreateWeeklyScheduleDto,
 	): Promise<WeeklySchedule> {
 		return this.ownerCrudMetrics.track({
@@ -171,25 +275,43 @@ export class WeeklySchedulesService {
 					'create',
 				);
 
-				await this.assertLocationResourceSameTenant(
-					tenantId,
-					dto.locationId,
-					dto.resourceId,
-					'create',
-				);
-
 				try {
-					return await this.prisma.weeklySchedule.create({
-						data: {
+					return await this.prisma.$transaction(async (tx) => {
+						await this.assertLocationResourceSameTenantTx(
+							tx,
 							tenantId,
-							locationId: dto.locationId,
-							resourceId: dto.resourceId,
-							dayOfWeek: dto.dayOfWeek,
-							startTime: start,
-							endTime: end,
-							effectiveFrom,
-							effectiveTo: effectiveTo === undefined ? null : effectiveTo,
-						},
+							dto.locationId,
+							dto.resourceId,
+							'create',
+						);
+
+						const created = await tx.weeklySchedule.create({
+							data: {
+								tenantId,
+								locationId: dto.locationId,
+								resourceId: dto.resourceId,
+								dayOfWeek: dto.dayOfWeek,
+								startTime: start,
+								endTime: end,
+								effectiveFrom,
+								effectiveTo: effectiveTo === undefined ? null : effectiveTo,
+							},
+						});
+
+						await this.auditLog.record(
+							tx,
+							{ type: 'USER', userId: actorUserId },
+							{
+								tenantId,
+								entity: 'WEEKLY_SCHEDULE',
+								entityId: created.id,
+								action: 'CREATE',
+								before: null,
+								after: this.toAuditSnapshot(created),
+							},
+						);
+
+						return created;
 					});
 				} catch (e: any) {
 					if (e?.code === 'P2002') {
@@ -260,57 +382,89 @@ export class WeeklySchedulesService {
 		});
 	}
 
-	async update(tenantId: string, id: string, dto: UpdateWeeklyScheduleDto) {
+	async update(
+		tenantId: string,
+		actorUserId: string,
+		id: string,
+		dto: UpdateWeeklyScheduleDto,
+	) {
 		return this.ownerCrudMetrics.track({
 			entity: this.metricEntity,
 			action: 'update',
 			tenant: tenantId,
 			run: async () => {
-				const existing = await this.getByIdOrThrow(tenantId, id);
-
-				const locationId = dto.locationId ?? existing.locationId;
-				const resourceId = dto.resourceId ?? existing.resourceId;
-
-				await this.assertLocationResourceSameTenant(
-					tenantId,
-					locationId,
-					resourceId,
-					'update',
-				);
-
-				const start = dto.startTime
-					? hhmmToDbTime(dto.startTime)
-					: existing.startTime;
-
-				const end = dto.endTime ? hhmmToDbTime(dto.endTime) : existing.endTime;
-
-				this.assertValidTimeRange(start, end, tenantId, 'update');
-
-				const effectiveFrom =
-					dto.effectiveFrom !== undefined
-						? (this.parseEffectiveDate(dto.effectiveFrom, tenantId, 'update') ??
-							new Date())
-						: existing.effectiveFrom;
-
-				const effectiveTo =
-					dto.effectiveTo !== undefined
-						? this.parseEffectiveDate(dto.effectiveTo, tenantId, 'update')
-						: existing.effectiveTo;
-
 				try {
-					return await this.prisma.weeklySchedule.update({
-						where: { id: existing.id },
-						data: {
+					return await this.prisma.$transaction(async (tx) => {
+						const existing = await this.getByIdOrThrowTx(tx, tenantId, id);
+
+						const locationId = dto.locationId ?? existing.locationId;
+						const resourceId = dto.resourceId ?? existing.resourceId;
+
+						await this.assertLocationResourceSameTenantTx(
+							tx,
+							tenantId,
 							locationId,
 							resourceId,
-							...(dto.dayOfWeek !== undefined
-								? { dayOfWeek: dto.dayOfWeek }
-								: {}),
-							startTime: start,
-							endTime: end,
-							effectiveFrom,
-							effectiveTo: effectiveTo === undefined ? null : effectiveTo,
-						},
+							'update',
+						);
+
+						const start = dto.startTime
+							? hhmmToDbTime(dto.startTime)
+							: existing.startTime;
+
+						const end = dto.endTime
+							? hhmmToDbTime(dto.endTime)
+							: existing.endTime;
+
+						this.assertValidTimeRange(start, end, tenantId, 'update');
+
+						const effectiveFrom =
+							dto.effectiveFrom !== undefined
+								? (this.parseEffectiveDate(
+										dto.effectiveFrom,
+										tenantId,
+										'update',
+									) ?? new Date())
+								: existing.effectiveFrom;
+
+						const effectiveTo =
+							dto.effectiveTo !== undefined
+								? this.parseEffectiveDate(
+										dto.effectiveTo,
+										tenantId,
+										'update',
+									)
+								: existing.effectiveTo;
+
+						const updated = await tx.weeklySchedule.update({
+							where: { id: existing.id },
+							data: {
+								locationId,
+								resourceId,
+								...(dto.dayOfWeek !== undefined
+									? { dayOfWeek: dto.dayOfWeek }
+									: {}),
+								startTime: start,
+								endTime: end,
+								effectiveFrom,
+								effectiveTo: effectiveTo === undefined ? null : effectiveTo,
+							},
+						});
+
+						await this.auditLog.record(
+							tx,
+							{ type: 'USER', userId: actorUserId },
+							{
+								tenantId,
+								entity: 'WEEKLY_SCHEDULE',
+								entityId: updated.id,
+								action: 'UPDATE',
+								before: this.toAuditSnapshot(existing),
+								after: this.toAuditSnapshot(updated),
+							},
+						);
+
+						return updated;
 					});
 				} catch (e: any) {
 					if (e?.code === 'P2002') {
@@ -333,19 +487,41 @@ export class WeeklySchedulesService {
 		});
 	}
 
-	async delete(tenantId: string, id: string) {
+	async delete(
+		tenantId: string,
+		actorUserId: string,
+		id: string,
+	) {
 		return this.ownerCrudMetrics.track({
 			entity: this.metricEntity,
 			action: 'delete',
 			tenant: tenantId,
 			run: async () => {
-				const existing = await this.getByIdOrThrow(tenantId, id);
+				return this.prisma.$transaction(async (tx) => {
+					const existing = await this.getByIdOrThrowTx(tx, tenantId, id);
 
-				await this.prisma.weeklySchedule.delete({
-					where: { id: existing.id },
+					await tx.weeklySchedule.delete({
+						where: { id: existing.id },
+					});
+
+					await this.auditLog.record(
+						tx,
+						{ type: 'USER', userId: actorUserId },
+						{
+							tenantId,
+							entity: 'WEEKLY_SCHEDULE',
+							entityId: existing.id,
+							action: 'DELETE',
+							before: this.toAuditSnapshot(existing),
+							after: null,
+							metadata: {
+								mode: 'hard-delete',
+							},
+						},
+					);
+
+					return { success: true };
 				});
-
-				return { success: true };
 			},
 		});
 	}

@@ -77,7 +77,7 @@ describe('Resources CRUD (e2e)', () => {
     const del = await axios.delete(`${baseURL}/api/resources/${id}`, {
       headers: headers(token),
     });
-    expect(del.data.isActive).toBe(false);
+    expect(del.data.success).toBe(true);
 
     const actives = await axios.get(`${baseURL}/api/resources?isActive=true`, {
       headers: headers(token),
@@ -123,9 +123,8 @@ describe('Resources CRUD (e2e)', () => {
       response: {
         status: 401,
         data: {
-          statusCode: 401,
+          code: 'INVALID_TENANT',
           message: 'Invalid tenant',
-          error: 'Unauthorized',
         },
       },
     });

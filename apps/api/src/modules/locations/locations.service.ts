@@ -1,6 +1,7 @@
 import {
 	BadRequestException,
 	ConflictException,
+	Inject,
 	Injectable,
 	NotFoundException,
 } from '@nestjs/common';
@@ -10,8 +11,15 @@ import { CreateLocationDto } from './dto/create-location.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { ListLocationsQuery } from './dto/list-locations.query';
 import { assertIanaTimeZone } from '../../common/calendar';
-import { listWithCreatedAtCursor, toCursorListResponse } from '../../common/pagination/list-with-cursor';
+import {
+	listWithCreatedAtCursor,
+	toCursorListResponse,
+} from '../../common/pagination/list-with-cursor';
 import { OwnerCrudMetrics } from '../../common/metrics';
+import {
+	AUDIT_LOG_PORT,
+	type AuditLogPort,
+} from '../../infrastructure/adapters/audit/audit-log.port';
 
 type LocationsCursorScope = {
 	feed: 'locations';
@@ -27,10 +35,46 @@ export class LocationsService {
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly ownerCrudMetrics: OwnerCrudMetrics,
+		@Inject(AUDIT_LOG_PORT)
+		private readonly auditLog: AuditLogPort<Prisma.TransactionClient>,
 	) {}
 
-	private async getByIdOrThrow(tenantId: string, id: string): Promise<Location> {
+	private toAuditSnapshot(location: Location) {
+		return {
+			id: location.id,
+			tenantId: location.tenantId,
+			name: location.name,
+			timeZone: location.timeZone,
+			isActive: location.isActive,
+			createdAt: location.createdAt.toISOString(),
+			updatedAt: location.updatedAt.toISOString(),
+		};
+	}
+
+	private async getByIdOrThrow(
+		tenantId: string,
+		id: string,
+	): Promise<Location> {
 		const loc = await this.prisma.location.findFirst({
+			where: { id, tenantId },
+		});
+
+		if (!loc) {
+			throw new NotFoundException({
+				code: 'LOCATION_NOT_FOUND',
+				message: 'Location not found',
+			});
+		}
+
+		return loc;
+	}
+
+	private async getByIdOrThrowTx(
+		tx: Prisma.TransactionClient,
+		tenantId: string,
+		id: string,
+	): Promise<Location> {
+		const loc = await tx.location.findFirst({
 			where: { id, tenantId },
 		});
 
@@ -70,28 +114,32 @@ export class LocationsService {
 	}
 
 	async getById(tenantId: string, id: string): Promise<Location> {
-    return this.ownerCrudMetrics.track({
-      entity: this.metricEntity,
-      action: 'get',
-      tenant: tenantId,
-      run: async () => {
-        try {
-          return await this.getByIdOrThrow(tenantId, id);
-        } catch (e) {
-          this.ownerCrudMetrics.validationError({
-            entity: this.metricEntity,
-            action: 'get',
-            code: 'LOCATION_NOT_FOUND',
-            tenant: tenantId,
-          });
+		return this.ownerCrudMetrics.track({
+			entity: this.metricEntity,
+			action: 'get',
+			tenant: tenantId,
+			run: async () => {
+				try {
+					return await this.getByIdOrThrow(tenantId, id);
+				} catch (e) {
+					this.ownerCrudMetrics.validationError({
+						entity: this.metricEntity,
+						action: 'get',
+						code: 'LOCATION_NOT_FOUND',
+						tenant: tenantId,
+					});
 
-          throw e;
-        }
-      },
-    });
-  }
+					throw e;
+				}
+			},
+		});
+	}
 
-	async create(tenantId: string, dto: CreateLocationDto): Promise<Location> {
+	async create(
+		tenantId: string,
+		actorUserId: string,
+		dto: CreateLocationDto,
+	): Promise<Location> {
 		return this.ownerCrudMetrics.track({
 			entity: this.metricEntity,
 			action: 'create',
@@ -100,13 +148,30 @@ export class LocationsService {
 				this.ensureTimeZone(dto.timeZone, tenantId, 'create');
 
 				try {
-					return await this.prisma.location.create({
-						data: {
-							tenantId,
-							name: dto.name.trim(),
-							timeZone: dto.timeZone ?? 'UTC',
-							isActive: dto.isActive ?? true,
-						},
+					return await this.prisma.$transaction(async (tx) => {
+						const created = await tx.location.create({
+							data: {
+								tenantId,
+								name: dto.name.trim(),
+								timeZone: dto.timeZone ?? 'UTC',
+								isActive: dto.isActive ?? true,
+							},
+						});
+
+						await this.auditLog.record(
+							tx,
+							{ type: 'USER', userId: actorUserId },
+							{
+								tenantId,
+								entity: 'LOCATION',
+								entityId: created.id,
+								action: 'CREATE',
+								before: null,
+								after: this.toAuditSnapshot(created),
+							},
+						);
+
+						return created;
 					});
 				} catch (e: any) {
 					if (e?.code === 'P2002') {
@@ -131,38 +196,46 @@ export class LocationsService {
 	}
 
 	async list(tenantId: string, q: ListLocationsQuery) {
-    return this.ownerCrudMetrics.track({
-      entity: this.metricEntity,
-      action: 'list',
-      tenant: tenantId,
-      run: async () => {
-        const whereBase: Prisma.LocationWhereInput = {
-          tenantId,
-          ...(q.isActive === undefined ? {} : { isActive: q.isActive }),
-          ...(q.search
-            ? { name: { contains: q.search, mode: 'insensitive' } }
-            : {}),
-        };
+		return this.ownerCrudMetrics.track({
+			entity: this.metricEntity,
+			action: 'list',
+			tenant: tenantId,
+			run: async () => {
+				const whereBase: Prisma.LocationWhereInput = {
+					tenantId,
+					...(q.isActive === undefined ? {} : { isActive: q.isActive }),
+					...(q.search
+						? { name: { contains: q.search, mode: 'insensitive' } }
+						: {}),
+				};
 
-        const result = await listWithCreatedAtCursor<Location, LocationsCursorScope>({
-          tenantId,
-          query: q,
-          scope: {
-            feed: 'locations',
-            isActive: q.isActive ?? undefined,
-            search: q.search ?? undefined,
-            direction: q.direction ?? 'desc',
-          },
-          whereBase,
-          delegate: this.prisma.location,
-        });
+				const result = await listWithCreatedAtCursor<
+					Location,
+					LocationsCursorScope
+				>({
+					tenantId,
+					query: q,
+					scope: {
+						feed: 'locations',
+						isActive: q.isActive ?? undefined,
+						search: q.search ?? undefined,
+						direction: q.direction ?? 'desc',
+					},
+					whereBase,
+					delegate: this.prisma.location,
+				});
 
-        return toCursorListResponse(result);
-      },
-    });
-  }
+				return toCursorListResponse(result);
+			},
+		});
+	}
 
-	async update(tenantId: string, id: string, dto: UpdateLocationDto): Promise<Location> {
+	async update(
+		tenantId: string,
+		actorUserId: string,
+		id: string,
+		dto: UpdateLocationDto,
+	): Promise<Location> {
 		return this.ownerCrudMetrics.track({
 			entity: this.metricEntity,
 			action: 'update',
@@ -170,20 +243,39 @@ export class LocationsService {
 			run: async () => {
 				this.ensureTimeZone(dto.timeZone, tenantId, 'update');
 
-				const existing = await this.getByIdOrThrow(tenantId, id);
-
 				try {
-					return await this.prisma.location.update({
-						where: { id: existing.id },
-						data: {
-							...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
-							...(dto.timeZone !== undefined
-								? { timeZone: dto.timeZone }
-								: {}),
-							...(dto.isActive !== undefined
-								? { isActive: dto.isActive }
-								: {}),
-						},
+					return await this.prisma.$transaction(async (tx) => {
+						const existing = await this.getByIdOrThrowTx(tx, tenantId, id);
+
+						const updated = await tx.location.update({
+							where: { id: existing.id },
+							data: {
+								...(dto.name !== undefined
+									? { name: dto.name.trim() }
+									: {}),
+								...(dto.timeZone !== undefined
+									? { timeZone: dto.timeZone }
+									: {}),
+								...(dto.isActive !== undefined
+									? { isActive: dto.isActive }
+									: {}),
+							},
+						});
+
+						await this.auditLog.record(
+							tx,
+							{ type: 'USER', userId: actorUserId },
+							{
+								tenantId,
+								entity: 'LOCATION',
+								entityId: updated.id,
+								action: 'UPDATE',
+								before: this.toAuditSnapshot(existing),
+								after: this.toAuditSnapshot(updated),
+							},
+						);
+
+						return updated;
 					});
 				} catch (e: any) {
 					if (e?.code === 'P2002') {
@@ -207,20 +299,42 @@ export class LocationsService {
 		});
 	}
 
-	async delete(tenantId: string, id: string) {
+	async delete(
+		tenantId: string,
+		actorUserId: string,
+		id: string,
+	) {
 		return this.ownerCrudMetrics.track({
 			entity: this.metricEntity,
 			action: 'delete',
 			tenant: tenantId,
 			run: async () => {
-				const existing = await this.getByIdOrThrow(tenantId, id);
+				return this.prisma.$transaction(async (tx) => {
+					const existing = await this.getByIdOrThrowTx(tx, tenantId, id);
 
-				await this.prisma.location.update({
-          where: { id: existing.id },
-          data: { isActive: false },
-        });
+					const deleted = await tx.location.update({
+						where: { id: existing.id },
+						data: { isActive: false },
+					});
 
-        return { success: true };
+					await this.auditLog.record(
+						tx,
+						{ type: 'USER', userId: actorUserId },
+						{
+							tenantId,
+							entity: 'LOCATION',
+							entityId: deleted.id,
+							action: 'DELETE',
+							before: this.toAuditSnapshot(existing),
+							after: this.toAuditSnapshot(deleted),
+							metadata: {
+								mode: 'soft-delete',
+							},
+						},
+					);
+
+					return { success: true };
+				});
 			},
 		});
 	}
