@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, Inject } from '@nestjs/common';
 import { DateTime } from 'luxon';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
-import { TenantCtx } from '../../common/types/request-context';
+import { TenantCtx } from '../../types/express';
 import { BookingPolicy } from '../../domain/appointments/booking.policy';
 import { DomainError, assertCanCancel, assertCanReschedule } from '../../domain/appointments/appointment.lifecycle';
 import { PrismaAvailabilityReadAdapter } from '../../infrastructure/adapters/availability/prisma-availability-read.adapter';

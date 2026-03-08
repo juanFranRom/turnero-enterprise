@@ -8,9 +8,12 @@ import {
 	UnauthorizedException,
 	UseGuards,
 } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantMembershipGuard } from '../auth/guards/tenant-membership.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
 import type { AuthUser } from '../auth/types/auth-user.type';
 import { Tenant } from '../tenants/decorators/tenant.decorator';
 import type { TenantCtx } from '../../types/express';
@@ -19,7 +22,8 @@ import { ResourceServicesService } from './resource-services.service';
 import { CreateResourceServiceDto } from './dtos/create-resource-service.dto';
 
 @Controller()
-@UseGuards(JwtAuthGuard, TenantMembershipGuard)
+@UseGuards(JwtAuthGuard, TenantMembershipGuard, RolesGuard)
+@Roles(Role.OWNER, Role.ADMIN)
 export class ResourceServicesController {
 	constructor(private readonly resourceServices: ResourceServicesService) {}
 
@@ -61,6 +65,7 @@ export class ResourceServicesController {
 	}
 
 	@Get('resources/:resourceId/services')
+	@Roles(Role.OWNER, Role.ADMIN, Role.STAFF)
 	async listServices(
 		@Tenant() tenant: TenantCtx | null,
 		@Param('resourceId') resourceId: string,
@@ -72,6 +77,7 @@ export class ResourceServicesController {
 	}
 
 	@Get('services/:serviceId/resources')
+	@Roles(Role.OWNER, Role.ADMIN, Role.STAFF)
 	async listResources(
 		@Tenant() tenant: TenantCtx | null,
 		@Param('serviceId') serviceId: string,

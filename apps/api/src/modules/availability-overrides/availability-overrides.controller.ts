@@ -10,19 +10,23 @@ import {
 	Query,
 	UseGuards,
 } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import { AvailabilityOverridesService } from './availability-overrides.service';
 import { CreateAvailabilityOverrideDto } from './dtos/create-availability-override.dto';
 import { UpdateAvailabilityOverrideDto } from './dtos/update-availability-override.dto';
 import { ListAvailabilityOverridesQueryDto } from './dtos/list-availability-overrides.query.dto';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
 import type { AuthUser } from '../auth/types/auth-user.type';
 import { Tenant } from '../tenants/decorators/tenant.decorator';
 import { TenantCtx } from '../../types/express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { TenantMembershipGuard } from '../auth/guards/tenant-membership.guard';
 
 @Controller('availability-overrides')
-@UseGuards(JwtAuthGuard, TenantMembershipGuard)
+@UseGuards(JwtAuthGuard, TenantMembershipGuard, RolesGuard)
+@Roles(Role.OWNER, Role.ADMIN)
 export class AvailabilityOverridesController {
 	constructor(
 		private readonly availabilityOverridesService: AvailabilityOverridesService,
@@ -53,6 +57,7 @@ export class AvailabilityOverridesController {
 	}
 
 	@Get()
+	@Roles(Role.OWNER, Role.ADMIN, Role.STAFF)
 	list(
 		@Tenant() tenant: TenantCtx | null,
 		@Query() query: ListAvailabilityOverridesQueryDto,
@@ -64,6 +69,7 @@ export class AvailabilityOverridesController {
 	}
 
 	@Get(':id')
+	@Roles(Role.OWNER, Role.ADMIN, Role.STAFF)
 	getById(
 		@Tenant() tenant: TenantCtx | null,
 		@Param('id') id: string,

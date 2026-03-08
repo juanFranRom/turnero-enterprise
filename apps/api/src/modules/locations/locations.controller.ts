@@ -10,9 +10,12 @@ import {
 	UnauthorizedException,
 	UseGuards,
 } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantMembershipGuard } from '../auth/guards/tenant-membership.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
 import type { AuthUser } from '../auth/types/auth-user.type';
 import { Tenant } from '../tenants/decorators/tenant.decorator';
 import type { TenantCtx } from '../../types/express';
@@ -23,7 +26,8 @@ import { UpdateLocationDto } from './dto/update-location.dto';
 import { ListLocationsQuery } from './dto/list-locations.query';
 
 @Controller('locations')
-@UseGuards(JwtAuthGuard, TenantMembershipGuard)
+@UseGuards(JwtAuthGuard, TenantMembershipGuard, RolesGuard)
+@Roles(Role.OWNER, Role.ADMIN)
 export class LocationsController {
 	constructor(private readonly locations: LocationsService) {}
 
@@ -52,6 +56,7 @@ export class LocationsController {
 	}
 
 	@Get()
+	@Roles(Role.OWNER, Role.ADMIN, Role.STAFF)
 	async list(
 		@Tenant() tenant: TenantCtx | null,
 		@Query() q: ListLocationsQuery,
@@ -60,6 +65,7 @@ export class LocationsController {
 	}
 
 	@Get(':id')
+	@Roles(Role.OWNER, Role.ADMIN, Role.STAFF)
 	async get(
 		@Tenant() tenant: TenantCtx | null,
 		@Param('id') id: string,
