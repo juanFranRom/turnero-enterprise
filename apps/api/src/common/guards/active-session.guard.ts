@@ -1,34 +1,18 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
-import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { SessionsService } from '../../modules/sessions/sessions.service';
 
 @Injectable()
 export class ActiveSessionGuard implements CanActivate {
-  constructor(private readonly prisma: PrismaService) {}
+	constructor(private readonly sessionsService: SessionsService) {}
 
-  async canActivate(ctx: ExecutionContext): Promise<boolean> {
-    const req = ctx.switchToHttp().getRequest<any>();
-    const user = req.auth;
-    const tenant = req.tenant;
+	async canActivate(ctx: ExecutionContext): Promise<boolean> {
+		const req = ctx.switchToHttp().getRequest<any>();
+		const user = req.auth ?? req.user;
 
-    // req.auth viene normalizado por tu JwtAccessStrategy: { userId, tenantId, sid, role }
-    const sid = user?.sid as string | undefined;
-    const userId = user?.userId as string | undefined;
-    const tenantId = tenant?.id as string | undefined;
+		const sid = user?.sid as string | undefined;
 
-    if (!sid || !userId || !tenantId) throw new UnauthorizedException('Unauthorized');
+		await this.sessionsService.assertActiveOrThrow('global', sid);
 
-    const session = await this.prisma.session.findFirst({
-      where: {
-        id: sid,
-        userId,
-        tenantId,
-        revokedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-      select: { id: true },
-    });
-
-    if (!session) throw new UnauthorizedException('Session revoked');
-    return true;
-  }
+		return true;
+	}
 }

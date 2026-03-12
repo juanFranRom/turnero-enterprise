@@ -12,8 +12,8 @@ export class SessionsService {
 		@Inject(REDIS) private readonly redis: Redis,
 	) {}
 
-	private key(tenantId: string, sid: string) {
-		return `${redisPrefix()}:${SESSIONS_CACHE_NS}:${tenantId}:${sid}`;
+	private key(namespace: string, sid: string) {
+		return `${redisPrefix()}:${SESSIONS_CACHE_NS}:${namespace}:${sid}`;
 	}
 
 	private unauthorized(code: string, message: string, details?: unknown): never {
@@ -28,26 +28,31 @@ export class SessionsService {
 	 * Invalida access tokens si la sesión fue revocada o venció.
 	 * Redis acelera, DB es source of truth.
 	 */
-	async assertActiveOrThrow(tenantId: string, sid?: string) {
+	async assertActiveOrThrow(namespace: string, sid?: string) {
 		if (!sid) {
 			this.unauthorized('SESSION_REQUIRED', 'Missing session');
 		}
 
-		const k = this.key(tenantId, sid);
+		const k = this.key(namespace, sid);
 
 		const cached = await this.redis.get(k);
-		if (cached === '1') return;
+		if (cached === '1') {
+			return;
+		}
 
 		const session = await this.prisma.session.findUnique({
 			where: { id: sid },
-			select: { id: true, tenantId: true, revokedAt: true, expiresAt: true },
+			select: {
+				id: true,
+				revokedAt: true,
+				expiresAt: true,
+			},
 		});
 
 		const now = new Date();
 
 		const invalid =
 			!session ||
-			session.tenantId !== tenantId ||
 			session.revokedAt !== null ||
 			session.expiresAt <= now;
 
@@ -63,26 +68,31 @@ export class SessionsService {
 		await this.redis.set(k, '1', 'EX', ttlSeconds);
 	}
 
-	async markActiveInCache(tenantId: string, sid: string, expiresAt: Date) {
+	async markActiveInCache(namespace: string, sid: string, expiresAt: Date) {
 		const now = new Date();
 		const ttlSeconds = Math.max(
 			1,
 			Math.floor((expiresAt.getTime() - now.getTime()) / 1000),
 		);
 
-		await this.redis.set(this.key(tenantId, sid), '1', 'EX', ttlSeconds);
+		await this.redis.set(this.key(namespace, sid), '1', 'EX', ttlSeconds);
 	}
 
-	async clearCache(tenantId: string, sid: string) {
-		await this.redis.del(this.key(tenantId, sid));
+	async clearCache(namespace: string, sid: string) {
+		await this.redis.del(this.key(namespace, sid));
 	}
 
-	async revokeSession(tenantId: string, sid: string) {
+	async revokeSession(namespace: string, sid: string) {
 		await this.prisma.session.updateMany({
-			where: { id: sid, tenantId, revokedAt: null },
-			data: { revokedAt: new Date() },
+			where: {
+				id: sid,
+				revokedAt: null,
+			},
+			data: {
+				revokedAt: new Date(),
+			},
 		});
 
-		await this.clearCache(tenantId, sid);
+		await this.clearCache(namespace, sid);
 	}
 }

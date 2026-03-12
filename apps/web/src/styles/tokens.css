@@ -1,0 +1,30 @@
+:root {
+	--color-primary: #5B5DF0;
+	--color-primary-hover: #4C4EE3;
+	--color-secondary: #22C1F1;
+	--color-success: #22C55E;
+	--color-warning: #F59E0B;
+	--color-danger: #EF4444;
+
+	--color-bg: #F8FAFC;
+	--color-card: #FFFFFF;
+	--color-border: #E2E8F0;
+	--color-text-primary: #0F172A;
+	--color-text-secondary: #64748B;
+	--color-sidebar-active: #EEF2FF;
+
+	--gradient-brand: linear-gradient(135deg, #5B5DF0 0%, #22C1F1 100%);
+
+	--radius-sm: 6px;
+	--radius-md: 10px;
+	--radius-lg: 14px;
+	--radius-card: 16px;
+	--radius-button: 10px;
+
+	--shadow-card: 0 4px 12px rgba(0, 0, 0, 0.05);
+	--shadow-hover: 0 8px 20px rgba(0, 0, 0, 0.08);
+	--shadow-floating: 0 10px 30px rgba(0, 0, 0, 0.1);
+
+	--motion-fast: 150ms;
+	--motion-ease: ease-out;
+}

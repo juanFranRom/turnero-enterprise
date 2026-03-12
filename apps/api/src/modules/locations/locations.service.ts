@@ -46,6 +46,12 @@ export class LocationsService {
 			name: location.name,
 			timeZone: location.timeZone,
 			isActive: location.isActive,
+			phone: location.phone,
+			addressLine1: location.addressLine1,
+			addressLine2: location.addressLine2,
+			city: location.city,
+			state: location.state,
+			postalCode: location.postalCode,
 			createdAt: location.createdAt.toISOString(),
 			updatedAt: location.updatedAt.toISOString(),
 		};
@@ -93,7 +99,9 @@ export class LocationsService {
 		tenantId: string,
 		action: 'create' | 'update',
 	) {
-		if (!timeZone) return;
+		if (!timeZone) {
+			return;
+		}
 
 		try {
 			assertIanaTimeZone(timeZone);
@@ -155,6 +163,12 @@ export class LocationsService {
 								name: dto.name.trim(),
 								timeZone: dto.timeZone ?? 'UTC',
 								isActive: dto.isActive ?? true,
+								phone: dto.phone?.trim(),
+								addressLine1: dto.addressLine1?.trim(),
+								addressLine2: dto.addressLine2?.trim(),
+								city: dto.city?.trim(),
+								state: dto.state?.trim(),
+								postalCode: dto.postalCode?.trim(),
 							},
 						});
 
@@ -205,7 +219,15 @@ export class LocationsService {
 					tenantId,
 					...(q.isActive === undefined ? {} : { isActive: q.isActive }),
 					...(q.search
-						? { name: { contains: q.search, mode: 'insensitive' } }
+						? {
+								OR: [
+									{ name: { contains: q.search, mode: 'insensitive' } },
+									{ phone: { contains: q.search, mode: 'insensitive' } },
+									{ addressLine1: { contains: q.search, mode: 'insensitive' } },
+									{ city: { contains: q.search, mode: 'insensitive' } },
+									{ state: { contains: q.search, mode: 'insensitive' } },
+								],
+							}
 						: {}),
 				};
 
@@ -258,6 +280,24 @@ export class LocationsService {
 									: {}),
 								...(dto.isActive !== undefined
 									? { isActive: dto.isActive }
+									: {}),
+								...(dto.phone !== undefined
+									? { phone: dto.phone?.trim() || null }
+									: {}),
+								...(dto.addressLine1 !== undefined
+									? { addressLine1: dto.addressLine1?.trim() || null }
+									: {}),
+								...(dto.addressLine2 !== undefined
+									? { addressLine2: dto.addressLine2?.trim() || null }
+									: {}),
+								...(dto.city !== undefined
+									? { city: dto.city?.trim() || null }
+									: {}),
+								...(dto.state !== undefined
+									? { state: dto.state?.trim() || null }
+									: {}),
+								...(dto.postalCode !== undefined
+									? { postalCode: dto.postalCode?.trim() || null }
 									: {}),
 							},
 						});

@@ -39,11 +39,6 @@ const isE2E = process.env.E2E === '1';
         ThrottlerModule.forRoot({
           throttlers: [
             { name: 'default', ttl: seconds(60), limit: 120 },
-            { name: 'login', ttl: seconds(60), limit: 5 },
-            { name: 'burst', ttl: seconds(10), limit: 30 },
-            { name: 'refresh', ttl: seconds(60), limit: 10 },
-            { name: 'logout', ttl: seconds(60), limit: 10 },
-            { name: 'logoutAll', ttl: seconds(60), limit: 5 },
           ],
           storage: new ThrottlerStorageRedisService(process.env.REDIS_URL!),
         }),

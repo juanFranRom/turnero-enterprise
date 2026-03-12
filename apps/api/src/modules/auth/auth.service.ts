@@ -7,7 +7,6 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { SessionsService } from '../sessions/sessions.service';
 
 type LoginArgs = {
-	tenantId: string;
 	email: string;
 	password: string;
 	userAgent?: string | string[] | undefined;
@@ -15,10 +14,16 @@ type LoginArgs = {
 };
 
 type RefreshArgs = {
-	tenantId: string;
 	refreshToken: string;
 	userAgent?: string | string[] | undefined;
 	ip?: string | null;
+};
+
+type AuthMembership = {
+	tenantId: string;
+	tenantSlug: string;
+	tenantName: string;
+	role: string;
 };
 
 @Injectable()
@@ -79,12 +84,14 @@ export class AuthService {
 			sameSite,
 			path: '/api/auth/refresh',
 		});
+
 		res.clearCookie(name, {
 			httpOnly: true,
 			secure,
 			sameSite,
 			path: '/api/auth',
 		});
+
 		res.clearCookie(name, {
 			httpOnly: true,
 			secure,
@@ -96,13 +103,12 @@ export class AuthService {
 	getRefreshFromCookie(req: Request): string | null {
 		const name = this.cookieName();
 		const v = (req as any).cookies?.[name];
+
 		return typeof v === 'string' && v.length > 0 ? v : null;
 	}
 
 	private signAccessToken(payload: {
 		sub: string;
-		tid: string;
-		role: string;
 		sid: string;
 	}) {
 		return this.jwt.sign(payload, {
@@ -111,23 +117,113 @@ export class AuthService {
 		});
 	}
 
-	private signRefreshToken(payload: { sub: string; tid: string; sid: string }) {
+	private signRefreshToken(payload: {
+		sub: string;
+		sid: string;
+	}) {
 		return this.jwt.sign(payload, {
 			secret: process.env.JWT_REFRESH_SECRET,
 			expiresIn: `${this.refreshTtlDays()}d`,
 		});
 	}
 
-	private async revokeAllUserTenantSessions(userId: string, tenantId: string) {
+	private async revokeAllUserSessions(userId: string) {
 		await this.prisma.session.updateMany({
-			where: { userId, tenantId, revokedAt: null },
-			data: { revokedAt: new Date() },
+			where: {
+				userId,
+				revokedAt: null,
+			},
+			data: {
+				revokedAt: new Date(),
+			},
 		});
+	}
+
+	private async mapMemberships(userId: string): Promise<AuthMembership[]> {
+		const memberships = await this.prisma.membership.findMany({
+			where: {
+				userId,
+			},
+			select: {
+				tenantId: true,
+				role: true,
+				tenant: {
+					select: {
+						slug: true,
+						name: true,
+					},
+				},
+			},
+			orderBy: {
+				createdAt: 'asc',
+			},
+		});
+
+		return memberships.map((membership) => ({
+			tenantId: membership.tenantId,
+			tenantSlug: membership.tenant.slug,
+			tenantName: membership.tenant.name,
+			role: membership.role,
+		}));
+	}
+
+	private resolveInitialActiveTenantId(memberships: AuthMembership[]): string | null {
+		if (memberships.length === 1) {
+			return memberships[0].tenantId;
+		}
+
+		return null;
+	}
+
+	private async buildAuthContext(args: {
+		userId: string;
+		sessionId: string;
+	}) {
+		const user = await this.prisma.user.findUnique({
+			where: {
+				id: args.userId,
+			},
+			select: {
+				id: true,
+				email: true,
+				emailVerified: true,
+				isActive: true,
+				createdAt: true,
+			},
+		});
+
+		if (!user) {
+			this.unauthorized('USER_NOT_FOUND', 'User not found');
+		}
+
+		const memberships = await this.mapMemberships(args.userId);
+
+		const session = await this.prisma.session.findUnique({
+			where: {
+				id: args.sessionId,
+			},
+			select: {
+				activeTenantId: true,
+			},
+		});
+
+		const activeTenant =
+			session?.activeTenantId
+				? memberships.find((membership) => membership.tenantId === session.activeTenantId) ?? null
+				: null;
+
+		return {
+			user,
+			memberships,
+			activeTenantSlug: activeTenant?.tenantSlug ?? null,
+		};
 	}
 
 	async login(args: LoginArgs) {
 		const user = await this.prisma.user.findUnique({
-			where: { email: args.email },
+			where: {
+				email: args.email,
+			},
 		});
 
 		if (!user || !user.isActive) {
@@ -135,29 +231,28 @@ export class AuthService {
 		}
 
 		const ok = await argon2.verify(user.passwordHash, args.password);
+
 		if (!ok) {
 			this.unauthorized('INVALID_CREDENTIALS', 'Invalid credentials');
 		}
 
-		const membership = await this.prisma.membership.findUnique({
-			where: {
-				userId_tenantId: { userId: user.id, tenantId: args.tenantId },
-			},
-		});
+		const memberships = await this.mapMemberships(user.id);
 
-		if (!membership) {
+		if (!memberships.length) {
 			this.unauthorized(
 				'TENANT_MEMBERSHIP_REQUIRED',
-				'Not a member of this tenant',
+				'User has no tenant memberships',
 			);
 		}
 
 		const sessionId = crypto.randomUUID();
+		const activeTenantId = this.resolveInitialActiveTenantId(memberships);
+
 		const refreshToken = this.signRefreshToken({
 			sub: user.id,
-			tid: args.tenantId,
 			sid: sessionId,
 		});
+
 		const refreshTokenHash = await argon2.hash(refreshToken);
 
 		const expiresAt = new Date(
@@ -168,29 +263,36 @@ export class AuthService {
 			data: {
 				id: sessionId,
 				userId: user.id,
-				tenantId: args.tenantId,
 				refreshTokenHash,
 				userAgent: Array.isArray(args.userAgent)
 					? args.userAgent.join(' ')
 					: args.userAgent,
 				ip: args.ip ?? undefined,
 				expiresAt,
+				activeTenantId,
 			},
 		});
 
-		await this.sessions.markActiveInCache(args.tenantId, sessionId, expiresAt);
+		await this.sessions.markActiveInCache('global', sessionId, expiresAt);
 
 		const accessToken = this.signAccessToken({
 			sub: user.id,
-			tid: args.tenantId,
-			role: membership.role,
 			sid: sessionId,
 		});
 
-		return { accessToken, refreshToken };
+		const authContext = await this.buildAuthContext({
+			userId: user.id,
+			sessionId,
+		});
+
+		return {
+			accessToken,
+			refreshToken,
+			...authContext,
+		};
 	}
 
-	async logout(args: { tenantId: string; refreshToken: string }) {
+	async logout(args: { refreshToken: string }) {
 		let payload: any;
 
 		try {
@@ -201,27 +303,34 @@ export class AuthService {
 			return;
 		}
 
-		if (payload.tid !== args.tenantId) return;
-
 		await this.prisma.session.updateMany({
-			where: { id: payload.sid, tenantId: args.tenantId, revokedAt: null },
-			data: { revokedAt: new Date() },
+			where: {
+				id: payload.sid,
+				revokedAt: null,
+			},
+			data: {
+				revokedAt: new Date(),
+			},
 		});
 
-		await this.sessions.clearCache(args.tenantId, payload.sid);
+		await this.sessions.clearCache('global', payload.sid);
 	}
 
-	async logoutBySid(args: { tenantId: string; sid: string }) {
+	async logoutBySid(args: { sid: string }) {
 		await this.prisma.session.updateMany({
-			where: { id: args.sid, tenantId: args.tenantId, revokedAt: null },
-			data: { revokedAt: new Date() },
+			where: {
+				id: args.sid,
+				revokedAt: null,
+			},
+			data: {
+				revokedAt: new Date(),
+			},
 		});
 
-		await this.sessions.clearCache(args.tenantId, args.sid);
+		await this.sessions.clearCache('global', args.sid);
 	}
 
 	async logoutByAccessBestEffort(args: {
-		tenantId: string;
 		authorization: string;
 	}) {
 		const token = args.authorization.startsWith('Bearer ')
@@ -234,10 +343,13 @@ export class AuthService {
 				ignoreExpiration: true,
 			});
 
-			if (!payload?.sid) return;
-			if (payload?.tid !== args.tenantId) return;
+			if (!payload?.sid) {
+				return;
+			}
 
-			await this.logoutBySid({ tenantId: args.tenantId, sid: payload.sid });
+			await this.logoutBySid({
+				sid: payload.sid,
+			});
 		} catch {
 			return;
 		}
@@ -254,12 +366,10 @@ export class AuthService {
 			this.unauthorized('INVALID_REFRESH_TOKEN', 'Invalid refresh token');
 		}
 
-		if (payload.tid !== args.tenantId) {
-			this.unauthorized('INVALID_REFRESH_TOKEN', 'Invalid refresh token');
-		}
-
 		const session = await this.prisma.session.findUnique({
-			where: { id: payload.sid },
+			where: {
+				id: payload.sid,
+			},
 		});
 
 		if (!session) {
@@ -274,56 +384,55 @@ export class AuthService {
 			this.unauthorized('INVALID_REFRESH_TOKEN', 'Invalid refresh token');
 		}
 
-		if (session.tenantId !== args.tenantId) {
-			this.unauthorized('INVALID_REFRESH_TOKEN', 'Invalid refresh token');
-		}
-
 		if (session.userId !== payload.sub) {
 			this.unauthorized('INVALID_REFRESH_TOKEN', 'Invalid refresh token');
 		}
 
 		const ok = await argon2.verify(session.refreshTokenHash, args.refreshToken);
+
 		if (!ok) {
-			await this.revokeAllUserTenantSessions(session.userId, args.tenantId);
+			await this.revokeAllUserSessions(session.userId);
 			this.unauthorized('INVALID_REFRESH_TOKEN', 'Invalid refresh token');
 		}
 
-		const membership = await this.prisma.membership.findUnique({
-			where: {
-				userId_tenantId: { userId: session.userId, tenantId: args.tenantId },
-			},
-		});
+		const memberships = await this.mapMemberships(session.userId);
 
-		if (!membership) {
-			await this.revokeAllUserTenantSessions(session.userId, args.tenantId);
+		if (!memberships.length) {
+			await this.revokeAllUserSessions(session.userId);
 			this.unauthorized(
 				'TENANT_MEMBERSHIP_REQUIRED',
-				'Not a member of this tenant',
+				'User has no tenant memberships',
 			);
 		}
 
 		const now = new Date();
 
-		const { newRefreshToken, newSessionId } = await this.prisma.$transaction(
-			async (tx) => {
+		const { newRefreshToken, newSessionId, expiresAt } =
+			await this.prisma.$transaction(async (tx) => {
 				const updated = await tx.session.updateMany({
-					where: { id: session.id, revokedAt: null },
-					data: { revokedAt: now },
+					where: {
+						id: session.id,
+						revokedAt: null,
+					},
+					data: {
+						revokedAt: now,
+					},
 				});
 
 				if (updated.count !== 1) {
-					await this.revokeAllUserTenantSessions(session.userId, args.tenantId);
+					await this.revokeAllUserSessions(session.userId);
 					this.unauthorized('INVALID_REFRESH_TOKEN', 'Invalid refresh token');
 				}
 
 				const newSessionId = crypto.randomUUID();
+
 				const newRefreshToken = this.signRefreshToken({
 					sub: session.userId,
-					tid: args.tenantId,
 					sid: newSessionId,
 				});
 
 				const newRefreshTokenHash = await argon2.hash(newRefreshToken);
+
 				const expiresAt = new Date(
 					Date.now() + this.refreshTtlDays() * 24 * 60 * 60 * 1000,
 				);
@@ -332,7 +441,6 @@ export class AuthService {
 					data: {
 						id: newSessionId,
 						userId: session.userId,
-						tenantId: args.tenantId,
 						refreshTokenHash: newRefreshTokenHash,
 						userAgent: Array.isArray(args.userAgent)
 							? args.userAgent.join(' ')
@@ -340,61 +448,106 @@ export class AuthService {
 						ip: args.ip ?? undefined,
 						expiresAt,
 						rotatedFromId: session.id,
+						activeTenantId: session.activeTenantId,
 					},
 				});
 
-				return { newRefreshToken, newSessionId };
-			},
-		);
+				return {
+					newRefreshToken,
+					newSessionId,
+					expiresAt,
+				};
+			});
 
-		await this.sessions.markActiveInCache(
-			args.tenantId,
-			newSessionId,
-			new Date(Date.now() + this.refreshTtlDays() * 24 * 60 * 60 * 1000),
-		);
-
-		await this.sessions.clearCache(args.tenantId, session.id);
+		await this.sessions.markActiveInCache('global', newSessionId, expiresAt);
+		await this.sessions.clearCache('global', session.id);
 
 		const accessToken = this.signAccessToken({
 			sub: session.userId,
-			tid: args.tenantId,
-			role: membership.role,
 			sid: newSessionId,
 		});
 
-		return { accessToken, newRefreshToken };
+		const authContext = await this.buildAuthContext({
+			userId: session.userId,
+			sessionId: newSessionId,
+		});
+
+		return {
+			accessToken,
+			newRefreshToken,
+			...authContext,
+		};
 	}
 
-	async logoutAll(args: { tenantId: string; userId: string }) {
+	async logoutAll(args: { userId: string }) {
 		await this.prisma.session.updateMany({
 			where: {
-				tenantId: args.tenantId,
 				userId: args.userId,
 				revokedAt: null,
 			},
-			data: { revokedAt: new Date() },
+			data: {
+				revokedAt: new Date(),
+			},
 		});
 	}
 
-	async me(args: { tenantId: string; userId: string }) {
-		const user = await this.prisma.user.findUnique({
-			where: { id: args.userId },
-			select: {
-				id: true,
-				email: true,
-				emailVerified: true,
-				isActive: true,
-				createdAt: true,
-			},
+	async me(args: { userId: string; sessionId: string }) {
+		return this.buildAuthContext({
+			userId: args.userId,
+			sessionId: args.sessionId,
 		});
+	}
 
-		const membership = await this.prisma.membership.findUnique({
+	async setActiveTenant(args: {
+		userId: string;
+		sessionId: string;
+		tenantSlug: string;
+	}) {
+		const membership = await this.prisma.membership.findFirst({
 			where: {
-				userId_tenantId: { userId: args.userId, tenantId: args.tenantId },
+				userId: args.userId,
+				tenant: {
+					slug: args.tenantSlug,
+				},
 			},
-			select: { role: true, tenantId: true, createdAt: true },
+			select: {
+				tenantId: true,
+				role: true,
+				tenant: {
+					select: {
+						slug: true,
+						name: true,
+					},
+				},
+			},
 		});
 
-		return { user, membership };
+		if (!membership) {
+			this.unauthorized(
+				'TENANT_MEMBERSHIP_REQUIRED',
+				'Not a member of this tenant',
+			);
+		}
+
+		await this.prisma.session.updateMany({
+			where: {
+				id: args.sessionId,
+				userId: args.userId,
+				revokedAt: null,
+			},
+			data: {
+				activeTenantId: membership.tenantId,
+			},
+		});
+
+		return {
+			activeTenantSlug: membership.tenant.slug,
+			activeTenant: {
+				id: membership.tenantId,
+				name: membership.tenant.name,
+				slug: membership.tenant.slug,
+				role: membership.role,
+			},
+		};
 	}
 }
