@@ -224,8 +224,10 @@ export class LocationsService {
 									{ name: { contains: q.search, mode: 'insensitive' } },
 									{ phone: { contains: q.search, mode: 'insensitive' } },
 									{ addressLine1: { contains: q.search, mode: 'insensitive' } },
+									{ addressLine2: { contains: q.search, mode: 'insensitive' } },
 									{ city: { contains: q.search, mode: 'insensitive' } },
 									{ state: { contains: q.search, mode: 'insensitive' } },
+									{ postalCode: { contains: q.search, mode: 'insensitive' } },
 								],
 							}
 						: {}),

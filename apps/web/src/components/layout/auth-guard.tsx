@@ -2,8 +2,8 @@
 
 import { useEffect, useState, type PropsWithChildren } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import axios from 'axios';
 import { authApi } from '../../lib/api/auth';
-import { ApiClientError } from '../../lib/api/errors';
 import { sessionStore } from '../../lib/auth/session-store';
 import { canViewOwnerModules } from '../../lib/auth/permissions';
 import { useT } from '../../lib/i18n/use-t';
@@ -28,6 +28,31 @@ const resolveActiveRole = (auth: AuthContext): UserRole | null => {
 	return auth.memberships[0]?.role ?? null;
 };
 
+const clearClientSession = () => {
+	sessionStore.clear();
+
+	if (typeof window !== 'undefined') {
+		window.localStorage.removeItem('timora.activeRole');
+	}
+};
+
+const getErrorStatus = (error: unknown): number | null => {
+	if (axios.isAxiosError(error)) {
+		return error.response?.status ?? null;
+	}
+
+	if (
+		typeof error === 'object' &&
+		error !== null &&
+		'status' in error &&
+		typeof (error as { status?: unknown }).status === 'number'
+	) {
+		return (error as { status: number }).status;
+	}
+
+	return null;
+};
+
 export function AuthGuard({ children }: PropsWithChildren) {
 	const router = useRouter();
 	const pathname = usePathname();
@@ -39,13 +64,36 @@ export function AuthGuard({ children }: PropsWithChildren) {
 	useEffect(() => {
 		let mounted = true;
 
+		const loadMe = async () => {
+			const me = await authApi.me();
+
+			if (me.activeTenantSlug) {
+				sessionStore.setActiveTenantSlug(me.activeTenantSlug);
+			}
+
+			const activeRole = resolveActiveRole(me);
+
+			if (!canViewOwnerModules(activeRole)) {
+				await authApi.logout();
+				clearClientSession();
+				router.replace('/login');
+				return null;
+			}
+
+			if (typeof window !== 'undefined' && activeRole) {
+				window.localStorage.setItem('timora.activeRole', activeRole);
+			}
+
+			return me;
+		};
+
 		const bootstrap = async () => {
 			try {
-				let token = sessionStore.getAccessToken();
+				const storedToken = sessionStore.getAccessToken();
 
-				if (!token) {
+				if (!storedToken) {
 					const refreshResponse = await authApi.refresh();
-					token = refreshResponse.accessToken;
+					sessionStore.setAccessToken(refreshResponse.accessToken);
 
 					if (refreshResponse.activeTenantSlug) {
 						sessionStore.setActiveTenantSlug(
@@ -54,50 +102,48 @@ export function AuthGuard({ children }: PropsWithChildren) {
 					}
 				}
 
-				const me = await authApi.me();
-
-				if (me.activeTenantSlug) {
-					sessionStore.setActiveTenantSlug(me.activeTenantSlug);
-				}
-
-				const activeRole = resolveActiveRole(me);
-
-				if (!canViewOwnerModules(activeRole)) {
-					await authApi.logout();
-					sessionStore.clear();
-
-					if (typeof window !== 'undefined') {
-						window.localStorage.removeItem('timora.activeRole');
-					}
-
-					router.replace('/login');
-					return;
-				}
-
-				if (typeof window !== 'undefined' && activeRole) {
-					window.localStorage.setItem('timora.activeRole', activeRole);
-				}
+				const me = await loadMe();
 
 				if (mounted) {
 					setAuth(me);
 				}
 			} catch (error) {
-				if (error instanceof ApiClientError) {
-					if (error.status === 401 || error.status === 403) {
-						sessionStore.clear();
+				const status = getErrorStatus(error);
 
-						if (typeof window !== 'undefined') {
-							window.localStorage.removeItem('timora.activeRole');
+				if (status === 401) {
+					try {
+						const refreshResponse = await authApi.refresh();
+						sessionStore.setAccessToken(refreshResponse.accessToken);
+
+						if (refreshResponse.activeTenantSlug) {
+							sessionStore.setActiveTenantSlug(
+								refreshResponse.activeTenantSlug
+							);
 						}
 
+						const me = await loadMe();
+
+						if (mounted) {
+							setAuth(me);
+						}
+
+						return;
+					} catch {
+						clearClientSession();
 						router.replace(`/login?next=${encodeURIComponent(pathname)}`);
 						return;
 					}
 				}
 
-				if (mounted) {
-					setAuth(null);
+				if (status === 403) {
+					clearClientSession();
+					router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+					return;
 				}
+
+				clearClientSession();
+				router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+				return;
 			} finally {
 				if (mounted) {
 					setLoading(false);

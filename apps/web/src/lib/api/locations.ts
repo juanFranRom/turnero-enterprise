@@ -1,34 +1,22 @@
 import { http } from './http';
 import type {
 	CreateLocationInput,
+	ListLocationsParams,
+	ListLocationsResponse,
 	Location,
-	LocationsListResponse,
 	UpdateLocationInput,
 } from '../../types/location';
 
-type ListLocationsParams = {
-	cursor?: string | null;
-	limit?: number;
-	search?: string;
-	isActive?: boolean;
-};
 
 export const locationsApi = {
-	async list(params: ListLocationsParams = {}): Promise<LocationsListResponse> {
-		const { data } = await http.get<LocationsListResponse>('/locations', {
-			params: {
-				...(params.cursor ? { cursor: params.cursor } : {}),
-				...(params.limit ? { limit: params.limit } : {}),
-				...(params.search ? { search: params.search } : {}),
-				...(params.isActive !== undefined
-					? { isActive: params.isActive }
-					: {}),
-			},
+	async list(params?: ListLocationsParams): Promise<ListLocationsResponse> {
+		const { data } = await http.get<ListLocationsResponse>('/locations', {
+			params,
 		});
 
 		return data;
 	},
-
+	
 	async getById(id: string): Promise<Location> {
 		const { data } = await http.get<Location>(`/locations/${id}`);
 		return data;

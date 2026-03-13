@@ -11,12 +11,22 @@ export const authApi = {
 	async login(input: LoginInput): Promise<LoginResponse> {
 		const { data } = await http.post<LoginResponse>('/auth/login', input);
 		sessionStore.setAccessToken(data.accessToken);
+
+		if (data.activeTenantSlug) {
+			sessionStore.setActiveTenantSlug(data.activeTenantSlug);
+		}
+
 		return data;
 	},
 
 	async refresh(): Promise<RefreshResponse> {
 		const { data } = await http.post<RefreshResponse>('/auth/refresh');
 		sessionStore.setAccessToken(data.accessToken);
+
+		if (data.activeTenantSlug) {
+			sessionStore.setActiveTenantSlug(data.activeTenantSlug);
+		}
+
 		return data;
 	},
 

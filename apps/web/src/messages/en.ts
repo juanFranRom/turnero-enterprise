@@ -12,6 +12,8 @@ export const en: TranslationDictionary = {
 	'common.actions.logout': 'Logout',
 	'common.actions.new': 'New',
 	'common.loadingWorkspace': 'Loading workspace...',
+	'common.selectPlaceholder': 'Select...',
+	'common.noOptions': 'No options',
 
 	'sidebar.productName': 'Timora',
 	'sidebar.productArea': 'Owner Console',
@@ -52,7 +54,7 @@ export const en: TranslationDictionary = {
 	'dashboard.quickActions.newService': 'New service',
 
 	'errors.generic': 'Something went wrong',
-		'errors.INVALID_CREDENTIALS': 'Invalid credentials',
+	'errors.INVALID_CREDENTIALS': 'Invalid credentials',
 	'errors.REFRESH_TOKEN_MISSING': 'Missing refresh token',
 	'errors.INVALID_REFRESH_TOKEN': 'Invalid refresh token',
 	'errors.SESSION_NOT_FOUND': 'Session not found',
@@ -100,5 +102,105 @@ export const en: TranslationDictionary = {
 	'locations.form.state': 'Provincia / Estado',
 	'locations.form.postalCode': 'Código postal',
 	'locations.empty.phone': 'Sin teléfono',
-	'locations.empty.address': 'Sin dirección',
+	'locations.empty.address': 'Sin dirección','errors.LOCATION_NOT_FOUND': 'Location not found',
+	'errors.LOCATION_NAME_TAKEN': 'A location with this name already exists',
+	'errors.INVALID_TIMEZONE': 'The time zone is invalid',
+
+	'locations.table.actions': 'Actions',
+
+	'locations.actions.edit': 'Edit',
+
+	'locations.loadingOne': 'Loading location...',
+	'locations.error.loadOneTitle': 'We could not load the location',
+
+	'locations.create.title': 'New location',
+	'locations.create.subtitle': 'Complete the core information to make this location operational.',
+
+	'locations.edit.title': 'Edit location',
+	'locations.edit.subtitle': 'Update the operational and contact details for this location.',
+
+	'locations.rbac.readOnly': 'Your current role can view locations, but cannot create or edit them.',
+
+	'locations.form.name': 'Name',
+	'locations.form.timeZone': 'Time zone',
+	'locations.form.status': 'Status',
+
+	'locations.form.actions.create': 'Create location',
+	'locations.form.actions.creating': 'Creating...',
+	'locations.form.actions.save': 'Save changes',
+	'locations.form.actions.saving': 'Saving...',
+	'locations.form.actions.cancel': 'Cancel',
+	'locations.form.actions.back': 'Back',
+
+	'locations.form.placeholders.name': 'E.g. Main branch',
+	'locations.form.placeholders.timeZone': 'E.g. America/Argentina/San_Luis',
+	'locations.form.placeholders.phone': 'E.g. +54 266 4123456',
+	'locations.form.placeholders.addressLine1': 'E.g. 550 Illia Ave',
+	'locations.form.placeholders.addressLine2': 'Floor, office, reference...',
+	'locations.form.placeholders.city': 'E.g. San Luis',
+	'locations.form.placeholders.state': 'E.g. San Luis',
+	'locations.form.placeholders.postalCode': 'E.g. 5700',
+
+	'locations.form.validation.name': 'Name must be between 2 and 80 characters',
+	'locations.form.validation.timeZone': 'Time zone must be between 2 and 64 characters',
+	'locations.form.validation.phone': 'Phone must be between 3 and 40 characters',
+	'locations.form.validation.addressLine1': 'Address must be between 3 and 120 characters',
+	'locations.form.validation.addressLine2': 'Additional address must be up to 120 characters',
+	'locations.form.validation.city': 'City must be between 2 and 80 characters',
+	'locations.form.validation.state': 'State or province must be between 2 and 80 characters',
+	'locations.form.validation.postalCode': 'Postal code must be between 2 and 20 characters',
+
+	'locations.actions.deactivate': 'Deactivate',
+	'locations.actions.deactivating': 'Deactivating...',
+
+	'locations.deactivate.confirm': 'Do you want to deactivate the location "{name}"?',
+	'locations.deactivate.errorTitle': 'We could not deactivate the location',
+	'locations.filters.search.label': 'Search',
+	'locations.filters.search.placeholder': 'Search by name, phone, address, city or state',
+
+	'locations.filters.status.label': 'Status',
+	'locations.filters.status.all': 'All',
+	'locations.filters.status.active': 'Active',
+	'locations.filters.status.inactive': 'Inactive',
+
+	'locations.filters.direction.label': 'Order',
+	'locations.filters.direction.desc': 'Newest first',
+	'locations.filters.direction.asc': 'Oldest first',
+
+	'locations.filters.reset': 'Clear filters',
+
+	'locations.filters.summary.active': 'Showing active locations.',
+	'locations.filters.summary.inactive': 'Showing inactive locations.',
+
+	'locations.actions.reactivate': 'Reactivate',
+	'locations.actions.reactivating': 'Reactivating...',
+	'locations.actions.errorTitle': 'We could not update the location',
+
+	'locations.reactivate.confirm': 'Do you want to reactivate the location "{name}"?',
+	'locations.pagination.page': 'Page {page}',
+	'locations.pagination.previous': 'Previous',
+	'locations.pagination.next': 'Next',
+	'common.cancel': 'Cancel',
+
+	'locations.dialogs.deactivate.title': 'Deactivate location',
+	'locations.dialogs.deactivate.description': 'The location "{name}" will become inactive, but it will remain in the system.',
+	'locations.dialogs.deactivate.confirm': 'Deactivate',
+
+	'locations.dialogs.reactivate.title': 'Reactivate location',
+	'locations.dialogs.reactivate.description': 'The location "{name}" will become active and available again.',
+	'locations.dialogs.reactivate.confirm': 'Reactivate',
+	'locations.empty.search.title': 'No locations found',
+	'locations.empty.search.description': 'Try adjusting your search or clearing the filters.',
+
+	'locations.empty.active.title': 'No active locations',
+	'locations.empty.active.description': 'There are no active locations to show yet.',
+
+	'locations.empty.inactive.title': 'No inactive locations',
+	'locations.empty.inactive.description': 'There are no inactive locations to show yet.',
+
+	'locations.empty.filteredActive.title': 'No active locations found',
+	'locations.empty.filteredActive.description': 'Try another search or change the status filter.',
+
+	'locations.empty.filteredInactive.title': 'No inactive locations found',
+	'locations.empty.filteredInactive.description': 'Try another search or change the status filter.',
 };

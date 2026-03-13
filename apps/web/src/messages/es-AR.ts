@@ -12,6 +12,8 @@ export const esAR: TranslationDictionary = {
 	'common.actions.logout': 'Cerrar sesión',
 	'common.actions.new': 'Nuevo',
 	'common.loadingWorkspace': 'Cargando espacio de trabajo...',
+	'common.selectPlaceholder': 'Seleccionar...',
+	'common.noOptions': 'Sin opciones',
 
 	'sidebar.productName': 'Timora',
 	'sidebar.productArea': 'Owner Console',
@@ -101,4 +103,104 @@ export const esAR: TranslationDictionary = {
 	'locations.form.postalCode': 'Código postal',
 	'locations.empty.phone': 'Sin teléfono',
 	'locations.empty.address': 'Sin dirección',
+	'errors.LOCATION_NOT_FOUND': 'La sucursal no fue encontrada',
+	'errors.LOCATION_NAME_TAKEN': 'Ya existe una sucursal con ese nombre',
+	'errors.INVALID_TIMEZONE': 'La zona horaria no es válida',
+
+	'locations.table.actions': 'Acciones',
+	'locations.actions.edit': 'Editar',
+
+	'locations.loadingOne': 'Cargando sucursal...',
+	'locations.error.loadOneTitle': 'No pudimos cargar la sucursal',
+
+	'locations.create.title': 'Nueva sucursal',
+	'locations.create.subtitle': 'Completá la información base de la sucursal para dejarla operativa.',
+
+	'locations.edit.title': 'Editar sucursal',
+	'locations.edit.subtitle': 'Actualizá los datos operativos y de contacto de la sucursal.',
+
+	'locations.rbac.readOnly': 'Tu rol actual puede visualizar sucursales, pero no crear ni editar.',
+
+	'locations.form.name': 'Nombre',
+	'locations.form.timeZone': 'Zona horaria',
+	'locations.form.status': 'Estado',
+
+	'locations.form.actions.create': 'Crear sucursal',
+	'locations.form.actions.creating': 'Creando...',
+	'locations.form.actions.save': 'Guardar cambios',
+	'locations.form.actions.saving': 'Guardando...',
+	'locations.form.actions.cancel': 'Cancelar',
+	'locations.form.actions.back': 'Volver',
+
+	'locations.form.placeholders.name': 'Ej. Casa central',
+	'locations.form.placeholders.timeZone': 'Ej. America/Argentina/San_Luis',
+	'locations.form.placeholders.phone': 'Ej. 2664123456',
+	'locations.form.placeholders.addressLine1': 'Ej. Av. Illia 550',
+	'locations.form.placeholders.addressLine2': 'Piso, oficina, referencia...',
+	'locations.form.placeholders.city': 'Ej. San Luis',
+	'locations.form.placeholders.state': 'Ej. San Luis',
+	'locations.form.placeholders.postalCode': 'Ej. 5700',
+
+	'locations.form.validation.name': 'El nombre debe tener entre 2 y 80 caracteres',
+	'locations.form.validation.timeZone': 'La zona horaria debe tener entre 2 y 64 caracteres',
+	'locations.form.validation.phone': 'El teléfono debe tener entre 3 y 40 caracteres',
+	'locations.form.validation.addressLine1': 'La dirección debe tener entre 3 y 120 caracteres',
+	'locations.form.validation.addressLine2': 'La dirección adicional debe tener hasta 120 caracteres',
+	'locations.form.validation.city': 'La ciudad debe tener entre 2 y 80 caracteres',
+	'locations.form.validation.state': 'La provincia o estado debe tener entre 2 y 80 caracteres',
+	'locations.form.validation.postalCode': 'El código postal debe tener entre 2 y 20 caracteres',
+
+	'locations.actions.deactivate': 'Desactivar',
+	'locations.actions.deactivating': 'Desactivando...',
+
+	'locations.deactivate.confirm': '¿Querés desactivar la sucursal "{name}"?',
+	'locations.deactivate.errorTitle': 'No pudimos desactivar la sucursal',
+	'locations.filters.search.label': 'Buscar',
+	'locations.filters.search.placeholder': 'Buscar por nombre, teléfono, dirección, ciudad o provincia',
+
+	'locations.filters.status.label': 'Estado',
+	'locations.filters.status.all': 'Todas',
+	'locations.filters.status.active': 'Activas',
+	'locations.filters.status.inactive': 'Inactivas',
+
+	'locations.filters.direction.label': 'Orden',
+	'locations.filters.direction.desc': 'Más recientes primero',
+	'locations.filters.direction.asc': 'Más antiguas primero',
+
+	'locations.filters.reset': 'Limpiar filtros',
+
+	'locations.filters.summary.active': 'Mostrando sucursales activas.',
+	'locations.filters.summary.inactive': 'Mostrando sucursales inactivas.',
+
+	'locations.actions.reactivate': 'Reactivar',
+	'locations.actions.reactivating': 'Reactivando...',
+	'locations.actions.errorTitle': 'No pudimos actualizar la sucursal',
+
+	'locations.reactivate.confirm': '¿Querés reactivar la sucursal "{name}"?',
+	'locations.pagination.page': 'Página {page}',
+	'locations.pagination.previous': 'Anterior',
+	'locations.pagination.next': 'Siguiente',
+	'common.cancel': 'Cancelar',
+
+	'locations.dialogs.deactivate.title': 'Desactivar sucursal',
+	'locations.dialogs.deactivate.description': 'La sucursal "{name}" dejará de estar activa, pero seguirá existiendo en el sistema.',
+	'locations.dialogs.deactivate.confirm': 'Desactivar',
+
+	'locations.dialogs.reactivate.title': 'Reactivar sucursal',
+	'locations.dialogs.reactivate.description': 'La sucursal "{name}" volverá a estar activa y disponible para operar.',
+	'locations.dialogs.reactivate.confirm': 'Reactivar',
+	'locations.empty.search.title': 'No encontramos sucursales',
+	'locations.empty.search.description': 'Probá ajustando la búsqueda o limpiando los filtros.',
+
+	'locations.empty.active.title': 'No hay sucursales activas',
+	'locations.empty.active.description': 'Todavía no hay sucursales activas para mostrar.',
+
+	'locations.empty.inactive.title': 'No hay sucursales inactivas',
+	'locations.empty.inactive.description': 'Todavía no hay sucursales inactivas para mostrar.',
+
+	'locations.empty.filteredActive.title': 'No encontramos sucursales activas',
+	'locations.empty.filteredActive.description': 'Probá con otra búsqueda o cambiando el filtro de estado.',
+
+	'locations.empty.filteredInactive.title': 'No encontramos sucursales inactivas',
+	'locations.empty.filteredInactive.description': 'Probá con otra búsqueda o cambiando el filtro de estado.',
 };

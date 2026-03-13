@@ -8,6 +8,7 @@ import { getRoleLabel } from '../../lib/i18n/domain-labels';
 import type { AppLocale } from '../../types/i18n';
 import type { AuthUser, UserRole } from '../../types/auth';
 import { Button } from '../ui/button';
+import { Select } from '../ui/select';
 
 type TopbarProps = {
 	user: AuthUser;
@@ -42,14 +43,15 @@ export function Topbar({
 			</div>
 
 			<div className="flex items-center gap-3">
-				<select
+				<Select
 					value={locale}
-					onChange={(event) => setLocale(event.target.value as AppLocale)}
-					className="h-10 rounded-button border border-border bg-card px-3 text-small text-text-primary outline-none transition-all duration-fast ease-timora focus:border-primary focus:ring-2 focus:ring-[rgba(91,93,240,0.15)]"
-				>
-					<option value="es-AR">ES</option>
-					<option value="en">EN</option>
-				</select>
+					onValueChange={(value) => setLocale(value as AppLocale)}
+					options={[
+						{ value: 'es-AR', label: 'ES' },
+						{ value: 'en', label: 'EN' },
+					]}
+					triggerClassName="w-[84px]"
+				/>
 
 				<div className="hidden text-right sm:block">
 					<div className="text-small font-semibold text-text-primary">

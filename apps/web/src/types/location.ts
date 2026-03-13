@@ -1,5 +1,6 @@
 export type Location = {
 	id: string;
+	tenantId: string;
 	name: string;
 	timeZone: string;
 	isActive: boolean;
@@ -13,14 +14,9 @@ export type Location = {
 	updatedAt: string;
 };
 
-export type LocationsListResponse = {
-	items: Location[];
-	nextCursor: string | null;
-};
-
 export type CreateLocationInput = {
 	name: string;
-	timeZone?: string;
+	timeZone: string;
 	isActive?: boolean;
 	phone?: string;
 	addressLine1?: string;
@@ -30,14 +26,22 @@ export type CreateLocationInput = {
 	postalCode?: string;
 };
 
-export type UpdateLocationInput = {
-	name?: string;
-	timeZone?: string;
+export type UpdateLocationInput = Partial<CreateLocationInput>;
+
+export type ListLocationsParams = {
+	cursor?: string;
+	limit?: number;
+	search?: string;
 	isActive?: boolean;
-	phone?: string;
-	addressLine1?: string;
-	addressLine2?: string;
-	city?: string;
-	state?: string;
-	postalCode?: string;
+	direction?: 'asc' | 'desc';
+};
+
+export type CursorListMeta = {
+	nextCursor: string | null;
+	hasMore: boolean;
+};
+
+export type ListLocationsResponse = {
+	items: Location[];
+	meta: CursorListMeta;
 };
