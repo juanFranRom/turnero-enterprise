@@ -45,22 +45,22 @@ async function createSameTenantLocation(token: string) {
 }
 
 async function createResource(
-    token: string,
-    args: { locationId: string; name?: string },
+	token: string,
+	args: { locationId: string; name?: string },
 ) {
-    const res = await axios.post(
-        `${baseURL}/api/resources`,
-        {
-            locationId: args.locationId,
-            name:
-                args.name ??
-                `AO Resource ${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-            kind: 'STAFF',
-        },
-        { headers: headers(token) },
-    );
+	const res = await axios.post(
+		`${baseURL}/api/resources`,
+		{
+			locationId: args.locationId,
+			name:
+				args.name ??
+				`AO Resource ${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+			kind: 'ROOM',
+		},
+		{ headers: headers(token) },
+	);
 
-    return res.data.id as string;
+	return res.data.resource.id as string;
 }
 
 describe('AvailabilityOverrides CRUD (e2e)', () => {
@@ -376,8 +376,8 @@ describe('AvailabilityOverrides CRUD (e2e)', () => {
             response: {
                 status: 401,
                 data: {
-                    code: 'INVALID_TENANT',
-                    message: 'Invalid tenant',
+                    code: 'TENANT_MEMBERSHIP_REQUIRED',
+                    message: 'User not a member of this tenant',
                 },
             },
         });

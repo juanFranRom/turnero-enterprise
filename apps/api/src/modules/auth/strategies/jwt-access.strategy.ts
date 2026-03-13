@@ -22,8 +22,8 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy, 'jwt-access') 
 
     if (tenant?.id && payload?.tid && tenant.id !== payload.tid) {
       throw new UnauthorizedException({
-        code: 'INVALID_TENANT',
-        message: 'Invalid tenant',
+        code: 'TENANT_MEMBERSHIP_REQUIRED',
+        message: 'User not a member of this tenant',
       });
     }
 

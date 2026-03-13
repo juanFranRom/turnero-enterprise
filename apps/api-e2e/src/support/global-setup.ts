@@ -47,8 +47,27 @@ module.exports = async function () {
     await prisma.service.deleteMany({ where: { tenantId: existingTenant.id } });
     await prisma.resource.deleteMany({ where: { tenantId: existingTenant.id } });
     await prisma.location.deleteMany({ where: { tenantId: existingTenant.id } });
+    await prisma.person.deleteMany({ where: { tenantId: existingTenant.id } });
+    const existingTenantMemberships = await prisma.membership.findMany({
+      where: { tenantId: existingTenant.id },
+      select: { userId: true },
+    });
+
+    const existingTenantUserIds = [
+      ...new Set(existingTenantMemberships.map((membership) => membership.userId)),
+    ];
+
+    if (existingTenantUserIds.length) {
+      await prisma.session.deleteMany({
+        where: {
+          userId: {
+            in: existingTenantUserIds,
+          },
+        },
+      });
+    }
+
     await prisma.membership.deleteMany({ where: { tenantId: existingTenant.id } });
-    await prisma.session.deleteMany({ where: { tenantId: existingTenant.id } });
     await prisma.tenant.delete({ where: { id: existingTenant.id } });
   }
 
@@ -64,8 +83,27 @@ module.exports = async function () {
     await prisma.service.deleteMany({ where: { tenantId: existingOther.id } });
     await prisma.resource.deleteMany({ where: { tenantId: existingOther.id } });
     await prisma.location.deleteMany({ where: { tenantId: existingOther.id } });
+    await prisma.person.deleteMany({ where: { tenantId: existingOther.id } });
+    const existingTenantMemberships = await prisma.membership.findMany({
+      where: { tenantId: existingOther.id },
+      select: { userId: true },
+    });
+
+    const existingTenantUserIds = [
+      ...new Set(existingTenantMemberships.map((membership) => membership.userId)),
+    ];
+
+    if (existingTenantUserIds.length) {
+      await prisma.session.deleteMany({
+        where: {
+          userId: {
+            in: existingTenantUserIds,
+          },
+        },
+      });
+    }
+
     await prisma.membership.deleteMany({ where: { tenantId: existingOther.id } });
-    await prisma.session.deleteMany({ where: { tenantId: existingOther.id } });
     await prisma.tenant.delete({ where: { id: existingOther.id } });
   }
 
@@ -105,7 +143,7 @@ module.exports = async function () {
       tenantId: tenant.id,
       locationId: location.id,
       name: 'E2E Resource',
-      kind: 'STAFF',
+      kind: 'ROOM',
       isActive: true,
     },
   });

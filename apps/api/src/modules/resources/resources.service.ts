@@ -5,7 +5,7 @@ import {
 	NotFoundException,
 } from '@nestjs/common';
 import { Prisma, ResourceKind, Role, type Resource } from '@prisma/client';
-import * as bcrypt from 'bcryptjs';
+import argon2 from 'argon2';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CreateResourceDto } from './dtos/create-resource.dto';
 import { UpdateResourceDto } from './dtos/update-resource.dto';
@@ -233,7 +233,7 @@ export class ResourcesService {
 		const temporaryPassword =
 			args.temporaryPassword ?? this.generateTemporaryPassword();
 
-		const passwordHash = await bcrypt.hash(temporaryPassword, 10);
+		const passwordHash = await argon2.hash(temporaryPassword);
 
 		const createdUser = await tx.user.create({
 			data: {
@@ -446,7 +446,15 @@ export class ResourcesService {
 						return {
 							resource: created,
 							person: created.person,
-							user: createdUserResult,
+							user: createdUserResult
+								? {
+									id: createdUserResult.user.id,
+									email: createdUserResult.user.email,
+									role: createdUserResult.role,
+									mustChangePassword: createdUserResult.user.mustChangePassword,
+									temporaryPassword: createdUserResult.temporaryPassword,
+								}
+								: null,
 						};
 					});
 				} catch (e: any) {
@@ -585,20 +593,25 @@ export class ResourcesService {
 						direction: q.direction ?? 'desc',
 					},
 					whereBase,
-					delegate: this.prisma.resource,
-					include: {
-						person: {
-							include: {
-								user: {
-									select: {
-										id: true,
-										email: true,
-										isActive: true,
-										mustChangePassword: true,
+					delegate: {
+						findMany: (args) =>
+							this.prisma.resource.findMany({
+								...(args as Prisma.ResourceFindManyArgs),
+								include: {
+									person: {
+										include: {
+											user: {
+												select: {
+													id: true,
+													email: true,
+													isActive: true,
+													mustChangePassword: true,
+												},
+											},
+										},
 									},
 								},
-							},
-						},
+							}),
 					},
 				});
 

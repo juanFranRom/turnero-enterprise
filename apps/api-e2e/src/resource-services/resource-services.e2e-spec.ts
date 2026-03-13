@@ -60,7 +60,7 @@ describe('ResourceService link (e2e)', () => {
         tenantId: tenant.id,
         locationId: location.id,
         name: `LinkRes ${Date.now()}`,
-        kind: 'STAFF',
+        kind: 'ROOM',
         isActive: true,
       },
     });
@@ -112,8 +112,8 @@ describe('ResourceService link (e2e)', () => {
       response: {
         status: 401,
         data: {
-          code: 'INVALID_TENANT',
-          message: 'Invalid tenant',
+          code: 'TENANT_MEMBERSHIP_REQUIRED',
+          message: 'User not a member of this tenant',
         },
       },
     });
@@ -131,7 +131,7 @@ describe('ResourceService link (e2e)', () => {
         tenantId: tenant.id,
         locationId: location.id,
         name: `UnlinkRes ${Date.now()}`,
-        kind: 'STAFF',
+        kind: 'ROOM',
         isActive: true,
       },
     });

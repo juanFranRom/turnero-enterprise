@@ -70,7 +70,7 @@ export class CreateResourceDto {
 	kind!: ResourceKind;
 
 	@ValidateIf((dto: CreateResourceDto) => dto.kind === ResourceKind.PERSON)
-	@IsNotEmptyObject()
+	@IsOptional()
 	@ValidateNested()
 	@Type(() => CreateResourcePersonDto)
 	person?: CreateResourcePersonDto;

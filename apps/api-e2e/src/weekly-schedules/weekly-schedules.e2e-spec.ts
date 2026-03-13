@@ -143,8 +143,8 @@ describe('WeeklySchedules CRUD (e2e)', () => {
       response: {
         status: 401,
         data: {
-          code: 'INVALID_TENANT',
-          message: 'Invalid tenant',
+          code: 'TENANT_MEMBERSHIP_REQUIRED',
+          message: 'User not a member of this tenant',
         },
       },
     });
