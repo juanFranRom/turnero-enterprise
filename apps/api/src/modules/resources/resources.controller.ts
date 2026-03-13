@@ -24,6 +24,7 @@ import { ResourcesService } from './resources.service';
 import { CreateResourceDto } from './dtos/create-resource.dto';
 import { UpdateResourceDto } from './dtos/update-resource.dto';
 import { ListResourcesQuery } from './dtos/list-resources.query';
+import { GenerateResourceUserDto } from './dtos/generate-resource-user.dto';
 
 @Controller('resources')
 @UseGuards(JwtAuthGuard, TenantMembershipGuard, RolesGuard)
@@ -81,6 +82,21 @@ export class ResourcesController {
 		@Body() dto: UpdateResourceDto,
 	) {
 		return this.resources.update(
+			this.getTenantIdOrThrow(tenant),
+			user.userId,
+			id,
+			dto,
+		);
+	}
+
+	@Post(':id/generate-user')
+	async generateUser(
+		@Tenant() tenant: TenantCtx | null,
+		@CurrentUser() user: AuthUser,
+		@Param('id') id: string,
+		@Body() dto: GenerateResourceUserDto,
+	) {
+		return this.resources.generateUser(
 			this.getTenantIdOrThrow(tenant),
 			user.userId,
 			id,

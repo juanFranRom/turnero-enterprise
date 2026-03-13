@@ -12,6 +12,7 @@ import { Throttle, seconds } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { ChangeInitialPasswordDto } from './dto/change-initial-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AntiBruteForceService } from '../security/anti-bruteforce/anti-bruteforce.service';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -189,6 +190,21 @@ export class AuthController {
 		this.authService.clearRefreshCookie(res);
 
 		return { ok: true };
+	}
+
+	@Throttle({ default: { limit: 10, ttl: seconds(60) } })
+	@Post('change-initial-password')
+	@UseGuards(JwtAuthGuard)
+	async changeInitialPassword(
+		@CurrentUser() user: AuthUser,
+		@Body() dto: ChangeInitialPasswordDto,
+	) {
+		return this.authService.changeInitialPassword({
+			userId: user.userId,
+			sessionId: user.sid,
+			currentPassword: dto.currentPassword,
+			newPassword: dto.newPassword,
+		});
 	}
 
 	@Throttle({ default: { limit: 60, ttl: seconds(60) } })

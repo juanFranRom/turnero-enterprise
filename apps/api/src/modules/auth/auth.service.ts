@@ -128,6 +128,16 @@ export class AuthService {
 	}
 
 	private async revokeAllUserSessions(userId: string) {
+		const activeSessions = await this.prisma.session.findMany({
+			where: {
+				userId,
+				revokedAt: null,
+			},
+			select: {
+				id: true,
+			},
+		});
+
 		await this.prisma.session.updateMany({
 			where: {
 				userId,
@@ -137,6 +147,49 @@ export class AuthService {
 				revokedAt: new Date(),
 			},
 		});
+
+		await Promise.all(
+			activeSessions.map((session) =>
+				this.sessions.clearCache('global', session.id),
+			),
+		);
+	}
+
+	private async revokeOtherUserSessions(args: {
+		userId: string;
+		exceptSessionId: string;
+	}) {
+		const activeSessions = await this.prisma.session.findMany({
+			where: {
+				userId: args.userId,
+				revokedAt: null,
+				id: {
+					not: args.exceptSessionId,
+				},
+			},
+			select: {
+				id: true,
+			},
+		});
+
+		await this.prisma.session.updateMany({
+			where: {
+				userId: args.userId,
+				revokedAt: null,
+				id: {
+					not: args.exceptSessionId,
+				},
+			},
+			data: {
+				revokedAt: new Date(),
+			},
+		});
+
+		await Promise.all(
+			activeSessions.map((session) =>
+				this.sessions.clearCache('global', session.id),
+			),
+		);
 	}
 
 	private async mapMemberships(userId: string): Promise<AuthMembership[]> {
@@ -188,6 +241,7 @@ export class AuthService {
 				email: true,
 				emailVerified: true,
 				isActive: true,
+				mustChangePassword: true,
 				createdAt: true,
 			},
 		});
@@ -496,6 +550,73 @@ export class AuthService {
 			userId: args.userId,
 			sessionId: args.sessionId,
 		});
+	}
+
+	async changeInitialPassword(args: {
+		userId: string;
+		sessionId: string;
+		currentPassword: string;
+		newPassword: string;
+	}) {
+		const user = await this.prisma.user.findUnique({
+			where: {
+				id: args.userId,
+			},
+			select: {
+				id: true,
+				passwordHash: true,
+				mustChangePassword: true,
+				isActive: true,
+			},
+		});
+
+		if (!user || !user.isActive) {
+			this.unauthorized('USER_NOT_FOUND', 'User not found');
+		}
+
+		if (!user.mustChangePassword) {
+			this.unauthorized(
+				'INITIAL_PASSWORD_CHANGE_NOT_REQUIRED',
+				'Initial password change is not required',
+			);
+		}
+
+		const currentPasswordOk = await argon2.verify(
+			user.passwordHash,
+			args.currentPassword,
+		);
+
+		if (!currentPasswordOk) {
+			this.unauthorized('INVALID_CREDENTIALS', 'Invalid credentials');
+		}
+
+		if (args.currentPassword === args.newPassword) {
+			this.unauthorized(
+				'PASSWORD_MUST_BE_DIFFERENT',
+				'New password must be different from current password',
+			);
+		}
+
+		const newPasswordHash = await argon2.hash(args.newPassword);
+
+		await this.prisma.user.update({
+			where: {
+				id: args.userId,
+			},
+			data: {
+				passwordHash: newPasswordHash,
+				mustChangePassword: false,
+			},
+		});
+
+		await this.revokeOtherUserSessions({
+			userId: args.userId,
+			exceptSessionId: args.sessionId,
+		});
+
+		return {
+			ok: true,
+		};
 	}
 
 	async setActiveTenant(args: {

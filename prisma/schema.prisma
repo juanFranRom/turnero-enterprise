@@ -1,10 +1,10 @@
 generator client {
-  provider = "prisma-client-js"
+	provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+	provider = "postgresql"
+	url      = env("DATABASE_URL")
 }
 
 /// ------------------------------
@@ -12,34 +12,35 @@ datasource db {
 /// ------------------------------
 
 model Tenant {
-  id        String   @id @default(uuid())
-  name      String
-  slug      String   @unique
-  planId    String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+	id        String   @id @default(uuid())
+	name      String
+	slug      String   @unique
+	planId    String
+	createdAt DateTime @default(now())
+	updatedAt DateTime @updatedAt
 
-  plan Plan @relation(fields: [planId], references: [id])
+	plan Plan @relation(fields: [planId], references: [id])
 
-  users           Membership[]
-  locations       Location[]
-  resources       Resource[]
-  services        Service[]
-  appointments    Appointment[]
-  weeklySchedules WeeklySchedule[]
-  overrides       AvailabilityOverride[]
-  activeSessions  Session[]              @relation("SessionActiveTenant")
+	users           Membership[]
+	locations       Location[]
+	resources       Resource[]
+	services        Service[]
+	appointments    Appointment[]
+	weeklySchedules WeeklySchedule[]
+	overrides       AvailabilityOverride[]
+	activeSessions  Session[]              @relation("SessionActiveTenant")
+	persons         Person[]
 
-  @@index([planId])
+	@@index([planId])
 }
 
 model Plan {
-  id        String   @id @default(uuid())
-  name      String
-  price     Int
-  createdAt DateTime @default(now())
+	id        String   @id @default(uuid())
+	name      String
+	price     Int
+	createdAt DateTime @default(now())
 
-  tenants Tenant[]
+	tenants Tenant[]
 }
 
 /// ------------------------------
@@ -47,60 +48,63 @@ model Plan {
 /// ------------------------------
 
 model User {
-  id            String   @id @default(uuid())
-  email         String   @unique
-  passwordHash  String
-  isActive      Boolean  @default(true)
-  emailVerified Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+	id                 String   @id @default(uuid())
+	email              String   @unique
+	passwordHash       String
+	isActive           Boolean  @default(true)
+	emailVerified      Boolean  @default(false)
+	mustChangePassword Boolean  @default(false)
+	personId           String?  @unique
+	createdAt          DateTime @default(now())
+	updatedAt          DateTime @updatedAt
 
-  memberships Membership[]
-  sessions    Session[]
-  auditLogs   AuditLog[]
+	person       Person?
+	memberships  Membership[]
+	sessions     Session[]
+	auditLogs    AuditLog[]
 
-  createdAppointments Appointment[] @relation("AppointmentCreatedBy")
-  updatedAppointments Appointment[] @relation("AppointmentUpdatedBy")
+	createdAppointments Appointment[] @relation("AppointmentCreatedBy")
+	updatedAppointments Appointment[] @relation("AppointmentUpdatedBy")
 }
 
 model Membership {
-  id        String   @id @default(uuid())
-  role      Role
-  userId    String
-  tenantId  String
-  createdAt DateTime @default(now())
+	id        String   @id @default(uuid())
+	role      Role
+	userId    String
+	tenantId  String
+	createdAt DateTime @default(now())
 
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+	user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+	tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, tenantId])
-  @@index([tenantId])
-  @@index([userId])
-  @@index([tenantId, role])
+	@@unique([userId, tenantId])
+	@@index([tenantId])
+	@@index([userId])
+	@@index([tenantId, role])
 }
 
 model Session {
-  id               String    @id @default(uuid())
-  userId           String
-  refreshTokenHash String
-  userAgent        String?
-  ip               String?
-  activeTenantId   String?
-  createdAt        DateTime  @default(now())
-  expiresAt        DateTime
-  revokedAt        DateTime?
-  rotatedFromId    String?
+	id               String    @id @default(uuid())
+	userId           String
+	refreshTokenHash String
+	userAgent        String?
+	ip               String?
+	activeTenantId   String?
+	createdAt        DateTime  @default(now())
+	expiresAt        DateTime
+	revokedAt        DateTime?
+	rotatedFromId    String?
 
-  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  activeTenant Tenant? @relation("SessionActiveTenant", fields: [activeTenantId], references: [id], onDelete: SetNull)
+	user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+	activeTenant Tenant? @relation("SessionActiveTenant", fields: [activeTenantId], references: [id], onDelete: SetNull)
 
-  rotatedFrom Session?  @relation("SessionRotation", fields: [rotatedFromId], references: [id], onDelete: SetNull)
-  rotatedTo   Session[] @relation("SessionRotation")
+	rotatedFrom Session?  @relation("SessionRotation", fields: [rotatedFromId], references: [id], onDelete: SetNull)
+	rotatedTo   Session[] @relation("SessionRotation")
 
-  @@index([userId])
-  @@index([activeTenantId])
-  @@index([userId, revokedAt])
-  @@index([expiresAt])
+	@@index([userId])
+	@@index([activeTenantId])
+	@@index([userId, revokedAt])
+	@@index([expiresAt])
 }
 
 /// ------------------------------
@@ -108,21 +112,43 @@ model Session {
 /// ------------------------------
 
 enum ResourceKind {
-  STAFF
-  ROOM
-  EQUIPMENT
+	PERSON
+	ROOM
+	EQUIPMENT
 }
 
 enum AvailabilityOverrideKind {
-  BLOCK
-  EXTRA
+	BLOCK
+	EXTRA
 }
 
 enum AppointmentStatus {
-  BOOKED
-  CONFIRMED
-  CANCELLED
-  NO_SHOW
+	BOOKED
+	CONFIRMED
+	CANCELLED
+	NO_SHOW
+}
+
+model Person {
+	id             String   @id @default(uuid())
+	tenantId       String
+	firstName      String
+	lastName       String
+	documentNumber String
+	email          String
+	phone          String?
+	isActive       Boolean  @default(true)
+	createdAt      DateTime @default(now())
+	updatedAt      DateTime @updatedAt
+
+	tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+	resource Resource?
+	user     User?
+
+	@@unique([tenantId, documentNumber])
+	@@unique([tenantId, email])
+	@@index([tenantId, isActive])
+	@@index([tenantId, lastName, firstName])
 }
 
 model Location {
@@ -157,179 +183,177 @@ model Location {
 }
 
 model Resource {
-  id         String @id @default(uuid())
-  tenantId   String
-  locationId String
+	id         String @id @default(uuid())
+	tenantId   String
+	locationId String
+	personId   String?
 
-  name     String
-  kind     ResourceKind @default(STAFF)
-  isActive Boolean      @default(true)
+	name        String
+	description String?
+	kind        ResourceKind @default(PERSON)
+	isActive    Boolean      @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+	createdAt DateTime @default(now())
+	updatedAt DateTime @updatedAt
 
-  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+	tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+	location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+	person   Person?  @relation(fields: [personId], references: [id], onDelete: SetNull)
 
-  services        ResourceService[]
-  weeklySchedules WeeklySchedule[]
-  overrides       AvailabilityOverride[]
-  appointments    Appointment[]
+	services        ResourceService[]
+	weeklySchedules WeeklySchedule[]
+	overrides       AvailabilityOverride[]
+	appointments    Appointment[]
 
-  @@unique([tenantId, locationId, name])
-  @@index([tenantId, locationId, isActive])
-  @@index([tenantId, name])
+	@@unique([tenantId, locationId, name])
+	@@index([tenantId, locationId, isActive])
+	@@index([tenantId, name])
+	@@index([tenantId, kind, isActive])
+	@@index([tenantId, personId])
 }
 
 model Service {
-  id         String @id @default(uuid())
-  tenantId   String
-  locationId String
+	id         String @id @default(uuid())
+	tenantId   String
+	locationId String
 
-  name                String
-  description         String?
-  durationMinutes     Int
-  bufferBeforeMinutes Int     @default(0)
-  bufferAfterMinutes  Int     @default(0)
+	name                String
+	description         String?
+	durationMinutes     Int
+	bufferBeforeMinutes Int     @default(0)
+	bufferAfterMinutes  Int     @default(0)
 
-  isActive Boolean @default(true)
+	isActive Boolean @default(true)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+	createdAt DateTime @default(now())
+	updatedAt DateTime @updatedAt
 
-  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+	tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+	location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
 
-  resources    ResourceService[]
-  appointments Appointment[]
+	resources    ResourceService[]
+	appointments Appointment[]
 
-  @@unique([tenantId, locationId, name])
-  @@index([tenantId, locationId, isActive])
-  @@index([tenantId, name])
+	@@unique([tenantId, locationId, name])
+	@@index([tenantId, locationId, isActive])
+	@@index([tenantId, name])
 }
 
 model ResourceService {
-  id         String   @id @default(uuid())
-  tenantId   String
-  resourceId String
-  serviceId  String
-  createdAt  DateTime @default(now())
+	id         String   @id @default(uuid())
+	tenantId   String
+	resourceId String
+	serviceId  String
+	createdAt  DateTime @default(now())
 
-  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
-  service  Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+	resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+	service  Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, resourceId, serviceId])
-  @@index([tenantId, resourceId])
-  @@index([tenantId, serviceId])
+	@@unique([tenantId, resourceId, serviceId])
+	@@index([tenantId, resourceId])
+	@@index([tenantId, serviceId])
 }
 
 model WeeklySchedule {
-  id         String @id @default(uuid())
-  tenantId   String
-  locationId String
-  resourceId String
+	id         String @id @default(uuid())
+	tenantId   String
+	locationId String
+	resourceId String
 
-  dayOfWeek Int
-  startTime DateTime @db.Time(0)
-  endTime   DateTime @db.Time(0)
+	dayOfWeek Int
+	startTime DateTime @db.Time(0)
+	endTime   DateTime @db.Time(0)
 
-  effectiveFrom DateTime  @default(now())
-  effectiveTo   DateTime?
+	effectiveFrom DateTime  @default(now())
+	effectiveTo   DateTime?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+	createdAt DateTime @default(now())
+	updatedAt DateTime @updatedAt
 
-  /// ✅ OPPOSITE FIELD
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+	tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+	location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+	resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, resourceId, dayOfWeek, startTime, endTime])
-  @@index([tenantId, resourceId, dayOfWeek])
-  @@index([tenantId, locationId])
+	@@unique([tenantId, resourceId, dayOfWeek, startTime, endTime])
+	@@index([tenantId, resourceId, dayOfWeek])
+	@@index([tenantId, locationId])
 }
 
 model AvailabilityOverride {
-  id         String @id @default(uuid())
-  tenantId   String
-  locationId String
-  resourceId String
+	id         String @id @default(uuid())
+	tenantId   String
+	locationId String
+	resourceId String
 
-  kind     AvailabilityOverrideKind
-  startsAt DateTime
-  endsAt   DateTime
-  reason   String?
+	kind     AvailabilityOverrideKind
+	startsAt DateTime
+	endsAt   DateTime
+	reason   String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+	createdAt DateTime @default(now())
+	updatedAt DateTime @updatedAt
 
-  /// ✅ OPPOSITE FIELD
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+	tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+	location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+	resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, resourceId, startsAt])
-  @@index([tenantId, locationId, startsAt])
+	@@index([tenantId, resourceId, startsAt])
+	@@index([tenantId, locationId, startsAt])
 }
 
 model Appointment {
-  id         String @id @default(uuid())
-  tenantId   String
-  locationId String
+	id         String @id @default(uuid())
+	tenantId   String
+	locationId String
 
-  resourceId String
-  serviceId  String?
+	resourceId String
+	serviceId  String?
 
-  status AppointmentStatus @default(BOOKED)
+	status AppointmentStatus @default(BOOKED)
 
-  startsAt DateTime
-  endsAt   DateTime
+	startsAt DateTime
+	endsAt   DateTime
 
-  // cliente MVP
-  customerName  String?
-  customerPhone String?
-  customerEmail String?
-  notes         String?
+	customerName  String?
+	customerPhone String?
+	customerEmail String?
+	notes         String?
 
-  // lifecycle
-  cancelledAt        DateTime?
-  cancellationReason String?
-  rescheduledAt      DateTime?
-  rescheduleReason   String?
-  rescheduledFromId  String?
+	cancelledAt        DateTime?
+	cancellationReason String?
+	rescheduledAt      DateTime?
+	rescheduleReason   String?
+	rescheduledFromId  String?
 
-  // idempotencia (opcional, recomendado al menos para cancel)
-  cancelIdempotencyKey     String?
-  rescheduleIdempotencyKey String?
+	cancelIdempotencyKey     String?
+	rescheduleIdempotencyKey String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+	createdAt DateTime @default(now())
+	updatedAt DateTime @updatedAt
 
-  createdByUserId String?
-  updatedByUserId String?
+	createdByUserId String?
+	updatedByUserId String?
 
-  history AppointmentHistory[]
+	history AppointmentHistory[]
 
-  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
-  service  Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+	tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+	location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+	resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+	service  Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
 
-  createdBy User? @relation("AppointmentCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  updatedBy User? @relation("AppointmentUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+	createdBy User? @relation("AppointmentCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+	updatedBy User? @relation("AppointmentUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
 
-  // idempotencia (si la activás)
-  @@unique([tenantId, cancelIdempotencyKey])
-  @@unique([tenantId, rescheduleIdempotencyKey])
-  // índices
-  @@index([tenantId])
-  @@index([locationId])
-  @@index([tenantId, locationId, startsAt])
-  @@index([tenantId, resourceId, startsAt])
-  @@index([tenantId, status, startsAt])
-  @@index([tenantId, serviceId, startsAt])
+	@@unique([tenantId, cancelIdempotencyKey])
+	@@unique([tenantId, rescheduleIdempotencyKey])
+	@@index([tenantId])
+	@@index([locationId])
+	@@index([tenantId, locationId, startsAt])
+	@@index([tenantId, resourceId, startsAt])
+	@@index([tenantId, status, startsAt])
+	@@index([tenantId, serviceId, startsAt])
 }
 
 /// ------------------------------
@@ -337,9 +361,9 @@ model Appointment {
 /// ------------------------------
 
 enum Role {
-  OWNER
-  ADMIN
-  STAFF
+	OWNER
+	ADMIN
+	STAFF
 }
 
 /// ------------------------------
@@ -347,90 +371,90 @@ enum Role {
 /// ------------------------------
 
 enum AppointmentHistoryAction {
-  CREATED
-  CANCELLED
-  RESCHEDULED
+	CREATED
+	CANCELLED
+	RESCHEDULED
 }
 
 enum AuditActorType {
-  USER
-  SYSTEM
+	USER
+	SYSTEM
 }
 
 enum AuditEntity {
-  LOCATION
-  RESOURCE
-  SERVICE
-  WEEKLY_SCHEDULE
-  RESOURCE_SERVICE
-  AVAILABILITY_OVERRIDE
+	LOCATION
+	RESOURCE
+	SERVICE
+	WEEKLY_SCHEDULE
+	RESOURCE_SERVICE
+	AVAILABILITY_OVERRIDE
 }
 
 enum AuditAction {
-  CREATE
-  UPDATE
-  DELETE
+	CREATE
+	UPDATE
+	DELETE
 }
 
 model AppointmentHistory {
-  id            String @id @default(uuid())
-  tenantId      String
-  appointmentId String
+	id            String @id @default(uuid())
+	tenantId      String
+	appointmentId String
 
-  action AppointmentHistoryAction
+	action AppointmentHistoryAction
 
-  actorType   AuditActorType @default(USER)
-  actorUserId String?
+	actorType   AuditActorType @default(USER)
+	actorUserId String?
 
-  resourceId String
-  serviceId  String?
-  locationId String
+	resourceId String
+	serviceId  String?
+	locationId String
 
-  prevStartsAt DateTime?
-  prevEndsAt   DateTime?
-  newStartsAt  DateTime?
-  newEndsAt    DateTime?
+	prevStartsAt DateTime?
+	prevEndsAt   DateTime?
+	newStartsAt  DateTime?
+	newEndsAt    DateTime?
 
-  idempotencyKey String?
-  reason         String?
-  metadata       Json?
+	idempotencyKey String?
+	reason         String?
+	metadata       Json?
 
-  createdAt DateTime @default(now())
+	createdAt DateTime @default(now())
 
-  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+	appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId, createdAt(sort: Desc), id(sort: Desc)])
-  @@index([tenantId, action, createdAt(sort: Desc), id(sort: Desc)])
-  @@index([tenantId, actorUserId, createdAt(sort: Desc), id(sort: Desc)])
-  @@index([tenantId, appointmentId, createdAt, id])
-  @@index([tenantId, appointmentId, createdAt(sort: Desc)])
-  @@index([tenantId, action, createdAt(sort: Desc)])
-  @@index([tenantId, actorUserId, createdAt(sort: Desc)])
-  @@index([tenantId, createdAt(sort: Desc)])
-  @@index([tenantId, appointmentId])
+	@@index([tenantId, createdAt(sort: Desc), id(sort: Desc)])
+	@@index([tenantId, action, createdAt(sort: Desc), id(sort: Desc)])
+	@@index([tenantId, actorUserId, createdAt(sort: Desc), id(sort: Desc)])
+	@@index([tenantId, appointmentId, createdAt, id])
+	@@index([tenantId, appointmentId, createdAt(sort: Desc)])
+	@@index([tenantId, action, createdAt(sort: Desc)])
+	@@index([tenantId, actorUserId, createdAt(sort: Desc)])
+	@@index([tenantId, createdAt(sort: Desc)])
+	@@index([tenantId, appointmentId])
 }
 
 model AuditLog {
-  id       String      @id @default(uuid())
-  tenantId String
-  entity   AuditEntity
-  entityId String
-  action   AuditAction
+	id       String      @id @default(uuid())
+	tenantId String
+	entity   AuditEntity
+	entityId String
+	action   AuditAction
 
-  actorType   AuditActorType @default(USER)
-  actorUserId String?
+	actorType   AuditActorType @default(USER)
+	actorUserId String?
 
-  before   Json?
-  after    Json?
-  metadata Json?
+	before   Json?
+	after    Json?
+	metadata Json?
 
-  createdAt DateTime @default(now())
+	createdAt DateTime @default(now())
 
-  actorUser User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+	actorUser User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
 
-  @@index([tenantId, createdAt(sort: Desc), id(sort: Desc)])
-  @@index([tenantId, action, createdAt(sort: Desc), id(sort: Desc)])
-  @@index([tenantId, entity, createdAt(sort: Desc), id(sort: Desc)])
-  @@index([tenantId, entity, entityId, createdAt(sort: Desc), id(sort: Desc)])
-  @@index([tenantId, actorUserId, createdAt(sort: Desc), id(sort: Desc)])
+	@@index([tenantId, createdAt(sort: Desc), id(sort: Desc)])
+	@@index([tenantId, action, createdAt(sort: Desc), id(sort: Desc)])
+	@@index([tenantId, entity, createdAt(sort: Desc), id(sort: Desc)])
+	@@index([tenantId, entity, entityId, createdAt(sort: Desc), id(sort: Desc)])
+	@@index([tenantId, actorUserId, createdAt(sort: Desc), id(sort: Desc)])
 }
